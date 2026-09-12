@@ -7,6 +7,19 @@ from unittest.mock import AsyncMock, patch
 from bot.chat_state import ChatMemory
 from bot.files import FileError
 from bot.websearch import SearchHit
+from bot.core.runtime import RanranRuntime
+
+def make_runtime(provider, tmp):
+    """测试用核心运行时：注入假 provider，避免真实网络调用。"""
+    settings = SimpleNamespace(
+        secrets=(), data_dir=tmp, deepseek_api_key="sk-test",
+        deepseek_model="deepseek-v4-flash", skills_dir=None, persona_output_guard=False,
+    )
+    return RanranRuntime(
+        settings, persona_extra="", deepseek=provider,
+        session_state_path=tmp / "sessions.json", session_memory_path=tmp / "memory.json",
+    )
+
 
 
 def make_ctx(tmp: Path, *, threshold: int = 500):
@@ -39,6 +52,7 @@ def make_ctx(tmp: Path, *, threshold: int = 500):
             "settings": settings,
             "reply_models": {},
             "chat_state": SimpleNamespace(get_model=lambda chat_id: "flash", nsfw=lambda chat_id: False),
+            "runtime": make_runtime(None, tmp),
         },
     )
     return update, ctx, message, thinking

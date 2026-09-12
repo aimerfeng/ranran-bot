@@ -1,5 +1,6 @@
-import json,unittest
+import json,tempfile,unittest
 from datetime import date
+from pathlib import Path
 from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import AsyncMock,patch
@@ -7,6 +8,21 @@ from bot.fortune import THEMES,THEME_ALIASES,THEME_HELP,HIDDEN_SIGNS,build_fortu
 from bot.fortune_reading import build_reading_prompt,fallback_reading,FORTUNE_READING_SYSTEM
 from bot.chat_state import ChatMemory
 from bot.providers import DeepSeekError
+from bot.core.runtime import RanranRuntime
+
+
+
+def make_runtime(provider, tmp):
+    """测试用核心运行时：注入假 provider，避免真实网络调用。"""
+    settings = SimpleNamespace(
+        secrets=(), data_dir=tmp, deepseek_api_key="sk-test",
+        deepseek_model="deepseek-v4-flash", skills_dir=None, persona_output_guard=False,
+    )
+    return RanranRuntime(
+        settings, persona_extra="", deepseek=provider,
+        session_state_path=tmp / "sessions.json", session_memory_path=tmp / "memory.json",
+    )
+
 
 class ReadingTests(unittest.TestCase):
     def test_expanded_themes(self):
@@ -37,7 +53,7 @@ class ReadingIntegrationTests(unittest.IsolatedAsyncioTestCase):
         user=SimpleNamespace(id=42,full_name='星野',username=None)
         update=SimpleNamespace(effective_message=msg,effective_user=user,effective_chat=SimpleNamespace(id=1,type='private'))
         provider=SimpleNamespace(ask=AsyncMock(return_value=answer))
-        ctx=SimpleNamespace(args=[],bot=SimpleNamespace(),bot_data={'memory':memory,'locks':{},'settings':SimpleNamespace(secrets=()),'deepseek':provider,'reply_models':{},'chat_state':SimpleNamespace(get_model=lambda cid:'flash')})
+        ctx=SimpleNamespace(args=[],bot=SimpleNamespace(),bot_data={'memory':memory,'locks':{},'settings':SimpleNamespace(secrets=()),'deepseek':provider,'reply_models':{},'chat_state':SimpleNamespace(get_model=lambda cid:'flash'),'runtime':make_runtime(provider,Path(tempfile.mkdtemp()))})
         return update,ctx,provider
     async def test_sender_returns_exact_fortune(self):
         u,c,p=self.fixture()
@@ -77,7 +93,7 @@ class ReadingIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(len(deliver.call_args.args[5]),110)
     async def test_codex_receives_same_reading_rules(self):
         from bot.main import _interpret_fortune
-        u,c,p=self.fixture();c.bot_data['codex']=p;c.bot_data['chat_state']=SimpleNamespace(get_model=lambda cid:'codex')
+        u,c,p=self.fixture();c.bot_data['codex']=p;c.bot_data['runtime'].codex=p;c.bot_data['chat_state']=SimpleNamespace(get_model=lambda cid:'codex')
         with patch('bot.main._deliver_reply',AsyncMock()),patch('bot.main._store_model'):
             await _interpret_fortune(u,c,build_fortune(42,'星野'))
         self.assertIn(FORTUNE_READING_SYSTEM,p.ask.call_args.kwargs['system'])

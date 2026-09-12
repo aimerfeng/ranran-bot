@@ -3,7 +3,22 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock,patch
 from bot.chat_state import ChatMemory
+from bot.core.runtime import RanranRuntime
 from bot.persona import build_user_prompt
+
+
+
+def make_runtime(provider, tmp):
+    """测试用核心运行时：注入假 provider，避免真实网络调用。"""
+    settings = SimpleNamespace(
+        secrets=(), data_dir=tmp, deepseek_api_key="sk-test",
+        deepseek_model="deepseek-v4-flash", skills_dir=None, persona_output_guard=False,
+    )
+    return RanranRuntime(
+        settings, persona_extra="", deepseek=provider,
+        session_state_path=tmp / "sessions.json", session_memory_path=tmp / "memory.json",
+    )
+
 
 class MemoryTests(unittest.TestCase):
     def test_persist_isolate_and_deduplicate(self):
@@ -36,7 +51,7 @@ class QueryTests(unittest.IsolatedAsyncioTestCase):
         message=SimpleNamespace(message_id=9,text='它叫什么',reply_to_message=SimpleNamespace(text='原神和东方选一个',caption=None,from_user=SimpleNamespace(full_name='然然',username=None),message_id=2),reply_text=AsyncMock())
         update=SimpleNamespace(effective_message=message,effective_chat=SimpleNamespace(id=1,type='private'),effective_user=SimpleNamespace(full_name='甲',username=None))
         provider=SimpleNamespace(ask=AsyncMock(return_value=answer))
-        ctx=SimpleNamespace(bot=SimpleNamespace(),bot_data={'memory':memory,'locks':{},'settings':SimpleNamespace(secrets=()),'deepseek':provider,'reply_models':{}})
+        ctx=SimpleNamespace(bot=SimpleNamespace(),bot_data={'memory':memory,'locks':{},'settings':SimpleNamespace(secrets=()),'deepseek':provider,'reply_models':{},'runtime':make_runtime(provider,Path(tempfile.mkdtemp()))})
         return update,ctx,provider
     async def test_actual_history_and_quote_reach_provider(self):
         from bot.main import _run_query

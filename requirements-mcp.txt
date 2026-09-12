@@ -1,0 +1,2 @@
+# MCP 适配器依赖（只用 Telegram bot 的话不需要装）
+mcp>=2.0

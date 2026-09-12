@@ -1,9 +1,12 @@
 import unittest
+import tempfile
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from bot.chat_state import ChatMemory
 from bot.websearch import MAX_SEARCH_ROUNDS, SearchHit, SearchReport, WebSearchError
+from bot.core.runtime import RanranRuntime
 
 
 def _hit(url: str = "https://news.example/1") -> SearchHit:
@@ -53,9 +56,24 @@ def make_fixture(
             "chat_state": SimpleNamespace(
                 get_model=lambda chat_id: "flash", nsfw=lambda chat_id: nsfw
             ),
+            "runtime": make_runtime(provider, Path(tempfile.mkdtemp())),
         },
     )
     return update, ctx, provider
+
+
+
+
+def make_runtime(provider, tmp):
+    """测试用核心运行时：注入假 provider，避免真实网络调用。"""
+    settings = SimpleNamespace(
+        secrets=(), data_dir=tmp, deepseek_api_key="sk-test",
+        deepseek_model="deepseek-v4-flash", skills_dir=None, persona_output_guard=False,
+    )
+    return RanranRuntime(
+        settings, persona_extra="", deepseek=provider,
+        session_state_path=tmp / "sessions.json", session_memory_path=tmp / "memory.json",
+    )
 
 
 class SearchFlowTests(unittest.IsolatedAsyncioTestCase):
@@ -67,7 +85,7 @@ class SearchFlowTests(unittest.IsolatedAsyncioTestCase):
 
         update, ctx, provider = self.fixture(["我先查一下。\n[搜索: 今日热点新闻]", "今天的热点是……[1]"])
         report = SearchReport(hits=[_hit()], summary="搜索汇总正文")
-        with patch("bot.main.deepseek_web_search", AsyncMock(return_value=report)) as search, patch(
+        with patch("bot.core.runtime.deepseek_web_search", AsyncMock(return_value=report)) as search, patch(
             "bot.main._deliver_reply", AsyncMock()
         ) as deliver:
             await _run_query(update, ctx, "flash", "今天有什么新闻", trigger="私聊")
@@ -87,7 +105,7 @@ class SearchFlowTests(unittest.IsolatedAsyncioTestCase):
 
         update, ctx, provider = self.fixture(["[搜索: 今日热点新闻]"])
         with patch(
-            "bot.main.deepseek_web_search", AsyncMock(side_effect=WebSearchError("搜索服务超时"))
+            "bot.core.runtime.deepseek_web_search", AsyncMock(side_effect=WebSearchError("搜索服务超时"))
         ), patch("bot.main._deliver_reply", AsyncMock()) as deliver:
             await _run_query(update, ctx, "flash", "今天有什么新闻", trigger="私聊")
         self.assertIn("联网搜索没成功", deliver.call_args.args[5])
@@ -130,7 +148,7 @@ class MultiRoundSearchTests(unittest.IsolatedAsyncioTestCase):
         first = SearchReport(hits=[_hit("https://a.example/1")], summary="A 汇总")
         second = SearchReport(hits=[_hit("https://b.example/2")], summary="B 汇总")
         with patch(
-            "bot.main.deepseek_web_search", AsyncMock(side_effect=[first, second])
+            "bot.core.runtime.deepseek_web_search", AsyncMock(side_effect=[first, second])
         ) as search, patch("bot.main._deliver_reply", AsyncMock()) as deliver:
             await _run_query(update, ctx, "flash", "今天有什么新闻", trigger="私聊")
 
@@ -153,7 +171,7 @@ class MultiRoundSearchTests(unittest.IsolatedAsyncioTestCase):
 
         report = SearchReport(hits=[_hit()], summary="汇总")
         update, ctx, provider = self.fixture(["[搜索: 一次又一次]"] * (MAX_SEARCH_ROUNDS + 2))
-        with patch("bot.main.deepseek_web_search", AsyncMock(return_value=report)) as search, patch(
+        with patch("bot.core.runtime.deepseek_web_search", AsyncMock(return_value=report)) as search, patch(
             "bot.main._deliver_reply", AsyncMock()
         ) as deliver:
             await _run_query(update, ctx, "flash", "今天有什么新闻", trigger="私聊")
@@ -172,7 +190,7 @@ class MultiRoundSearchTests(unittest.IsolatedAsyncioTestCase):
         )
         report = SearchReport(hits=[_hit("https://a.example/1")], summary="A 汇总")
         with patch(
-            "bot.main.deepseek_web_search",
+            "bot.core.runtime.deepseek_web_search",
             AsyncMock(side_effect=[report, WebSearchError("服务超时")]),
         ) as search, patch("bot.main._deliver_reply", AsyncMock()) as deliver:
             await _run_query(update, ctx, "flash", "今天有什么新闻", trigger="私聊")
@@ -187,7 +205,7 @@ class MultiRoundSearchTests(unittest.IsolatedAsyncioTestCase):
 
         update, ctx, _ = self.fixture(["[搜索: 第一轮]"])
         with patch(
-            "bot.main.deepseek_web_search", AsyncMock(side_effect=WebSearchError("服务超时"))
+            "bot.core.runtime.deepseek_web_search", AsyncMock(side_effect=WebSearchError("服务超时"))
         ), patch("bot.main._deliver_reply", AsyncMock()) as deliver:
             await _run_query(update, ctx, "flash", "今天有什么新闻", trigger="私聊")
         self.assertIn("联网搜索没成功", deliver.call_args.args[5])
@@ -196,7 +214,7 @@ class MultiRoundSearchTests(unittest.IsolatedAsyncioTestCase):
         from bot.main import _run_query
 
         update, ctx, provider = self.fixture(["[搜索: 群里的八卦]"])
-        with patch("bot.main.deepseek_web_search", AsyncMock()) as search, patch(
+        with patch("bot.core.runtime.deepseek_web_search", AsyncMock()) as search, patch(
             "bot.main._deliver_reply", AsyncMock()
         ) as deliver:
             await _run_query(update, ctx, "flash", "他们在聊天", trigger="主动接话")

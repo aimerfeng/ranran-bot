@@ -27,28 +27,22 @@ from telegram.ext import (
 from bot.sticker_commands import sticker_cmd, quote_cmd, choose_cmd
 from bot.chat_state import AutoReplyGate, ChatMemory, ChatStateStore
 from bot.daily_journal import BEIJING, DailyJournal, DailySnapshot
+from bot.core.runtime import RanranRuntime
 from bot.daily_analysis import DailyAnalyzer
 from bot.files import FileError, create_artifact, long_reply_filename, send_artifact
-from bot.harness.agent import Agent
-from bot.harness.kit import build_tools
 from bot.harness.skills import SkillRegistry, load_skills
-from bot.harness.types import AgentTurn
 from bot.fun import react_to, send_anime_image, welcome_line
 from bot.fortune import Fortune, THEME_ALIASES, THEME_HELP, send_fortune
 from bot.fortune_reading import FORTUNE_READING_SYSTEM, build_reading_prompt, fallback_reading
 from bot.images import collect_images
 from bot.models import MODELS, default_key_from_settings, model_for_images, model_list_text, parse_model_key
 from bot.persona import (
-    CODEX_SYSTEM,
-    DEEPSEEK_PERSONA,
     OUTPUT_GUARD,
     build_user_prompt,
-    compose_system,
     load_extra_persona,
     strip_roleplay_prefix,
 )
 from bot.providers import CodexError, CodexProvider, DeepSeekError, DeepSeekProvider
-from bot.providers.deepseek import ChatResult, ToolsUnsupported, user_content
 from bot.settings import (
     CHAT_STATE_PATH,
     GROUP_PACKS_PATH,
@@ -77,16 +71,11 @@ from bot.util import (
     strip_bot_mention,
 )
 from bot.websearch import (
-    MAX_SEARCH_ROUNDS,
-    SEARCH_ANSWER_SYSTEM,
     WebSearchError,
     dedupe_hits,
-    deepseek_web_search,
     format_search_sources,
-    merge_report_hits,
     parse_search_marker,
     parse_search_request,
-    search_context_text,
     strip_search_marker,
 )
 from bot.whitelist import Whitelist, WhitelistError, parse_chat_id
@@ -886,6 +875,10 @@ async def _maybe_reply(
 MAX_AGENT_STEPS = 4
 
 
+def _runtime(context: ContextTypes.DEFAULT_TYPE) -> RanranRuntime:
+    return context.bot_data["runtime"]
+
+
 def _nsfw_on(context: ContextTypes.DEFAULT_TYPE, chat_id: int | None) -> bool:
     """该聊天是否开了外部人设；状态不可用时一律当作关闭。"""
     if chat_id is None:
@@ -925,96 +918,14 @@ def _compose_system(
     extra_rules: str = "",
     chat_id: int | None = None,
 ) -> str:
-    """角色设定 + 任务规则 + skill（目录/自动生效）→ 外部人设 → 输出纪律。"""
-    base = _system_prompt(context, spec, extra_rules)
-    skills = context.bot_data.get("skills")
-    if isinstance(skills, SkillRegistry):
-        catalog = skills.catalog()
-        if catalog:
-            base += (
-                "\n\n可用 skill（要按某个 skill 的方式处理时，先用 use_skill 工具加载它的正文，"
-                "不要凭空猜内容）：\n" + catalog
-            )
-        active = skills.active_section(user_text)
-        if active:
-            base += "\n\n当前自动生效的 skill：\n" + active
-    composed = compose_system(base, _persona_extra(context, chat_id))
-    return compose_system(composed, _output_guard(context))
-
-
-def _system_prompt(context: ContextTypes.DEFAULT_TYPE, spec: Any, extra_rules: str = "") -> str:
-    """角色设定 + 任务规则；外部人设由 _answer_with_search 追加在最后一部分。"""
-    base = CODEX_SYSTEM if spec.provider == "codex" else DEEPSEEK_PERSONA
-    if extra_rules:
-        base = base + "\n\n" + extra_rules
-    return base
-
-
-async def _answer_with_search(
-    context: ContextTypes.DEFAULT_TYPE,
-    spec: Any,
-    user_prompt: str,
-    *,
-    system: str,
-    extra: str = "",
-    search_rules: str = SEARCH_ANSWER_SYSTEM,
-    initial_query: str | None = None,
-    images: list[Any] | None = None,
-    max_rounds: int = MAX_SEARCH_ROUNDS,
-    on_search: Any = None,
-    guard: str = "",
-) -> tuple[str, list[Any]]:
-    """回答问题；模型觉得信息不够时用 [搜索: …] 自己发起联网，搜完再答。
-
-    每轮搜索的结果都会累积回灌给模型，因此它能连续追问（最多 max_rounds 轮）。
-    中途某轮搜索失败不会丢掉已有材料，只把失败原因告诉模型让它将就着答。
-    """
-    settings = _settings(context)
-    reports: list[Any] = []
-    materials: list[str] = []
-    query = initial_query
-    attempt = 0
-    while True:
-        if query:
-            attempt += 1
-            try:
-                report = await deepseek_web_search(
-                    settings.deepseek_api_key, query, model=settings.deepseek_model
-                )
-            except WebSearchError:
-                if not reports:
-                    raise
-                logger.warning("Search round %s failed chat query=%s", attempt, query[:60])
-                materials.append(f"（第 {attempt} 轮搜索「{query}」失败，只能用手上已有的材料回答。）")
-                query = None
-                continue
-            reports.append(report)
-            materials.append(search_context_text(query, report.hits, report.summary))
-            logger.info("Web search round=%s query=%s hits=%s", attempt, query[:60], len(report.hits))
-            if on_search is not None:
-                await on_search(query, attempt)
-            query = None
-
-        prompt = user_prompt if not materials else user_prompt + "\n\n" + "\n\n".join(materials)
-        ask_system = system
-        if materials and search_rules:
-            ask_system += "\n\n" + search_rules
-        if attempt >= max_rounds:
-            ask_system += (
-                f"\n\n（联网搜索已经用满 {max_rounds} 轮，直接基于现有材料回答，"
-                "不要再输出 [搜索: …]；材料确实不够就如实说明。）"
-            )
-        raw = await _ask_provider(
-            context,
-            spec,
-            prompt,
-            system=compose_system(compose_system(ask_system, extra), guard),
-            images=images if not materials else None,
-        )
-        marker = parse_search_marker(raw) if attempt < max_rounds else None
-        if not marker:
-            return raw, reports
-        query = marker
+    """组装系统提示词；具体规则在核心运行时里（Telegram 与 MCP 共用）。"""
+    runtime = _runtime(context)
+    return runtime.compose_prompt(
+        spec,
+        user_text=user_text,
+        extra_rules=extra_rules,
+        nsfw=_nsfw_on(context, chat_id),
+    )
 
 
 async def _answer_with_tools(
@@ -1032,78 +943,23 @@ async def _answer_with_tools(
     on_search: Any = None,
     on_tool: Any = None,
 ) -> tuple[str, list[Any], list[Any]]:
-    """优先走 harness 的原生工具循环；模型不支持工具时退回 [搜索: …] 文本协议。
+    """跑一个 agent 回合；实现已收敛到核心运行时（bot/core/runtime.py）。
 
     返回 (正文, 来源列表, 文件产物)。
     """
-    settings = _settings(context)
-    provider_key = "codex" if spec.provider == "codex" else "deepseek"
-    provider = context.bot_data.get(provider_key)
-    supports_tools = provider is not None and hasattr(provider, "chat")
-
-    if automatic or not supports_tools:
-        raw, reports = await _answer_with_search(
-            context,
-            spec,
-            user_prompt,
-            system=system,
-            extra=extra,
-            guard=guard,
-            images=images,
-            max_rounds=0 if automatic else MAX_SEARCH_ROUNDS,
-            on_search=on_search,
-        )
-        return raw, merge_report_hits(reports), []
-
-    kit = build_tools(
-        api_key=settings.deepseek_api_key,
-        model=settings.deepseek_model,
-        outbox_dir=settings.data_dir / "outbox",
-        skills=context.bot_data.get("skills"),
-        journal=context.bot_data.get("daily_journal"),
-        chat_id=chat_id,
-    )
-    contents: Any = user_content(user_prompt, images)
-    if initial_query:
-        report = await deepseek_web_search(
-            settings.deepseek_api_key, initial_query, model=settings.deepseek_model
-        )
-        kit.searches += 1
-        kit.search_hits.extend(report.hits)
-        prefix = (
-            "用户明确要求联网，系统已经替他搜过一轮，结果如下（信息不够可以再调用 web_search）：\n\n"
-            + search_context_text(initial_query, report.hits, report.summary)
-            + "\n\n"
-        )
-        contents = prefix + contents if isinstance(contents, str) else [
-            {"type": "text", "text": prefix},
-            *contents,
-        ]
-
-    agent = Agent(
-        provider,
-        kit.registry,
-        max_steps=MAX_AGENT_STEPS,
+    return await _runtime(context).answer(
+        spec,
+        user_prompt,
+        system=system,
+        extra=extra,
+        guard=guard,
+        chat_key=chat_id,
+        images=images,
+        automatic=automatic,
+        initial_query=initial_query,
+        on_search=on_search,
         on_tool=on_tool,
-        marker_parser=parse_search_marker,
     )
-    turn = await agent.run(system=system, user_content=contents, model=spec.api_model)
-    if turn.tools_disabled:
-        raw, reports = await _answer_with_search(
-            context,
-            spec,
-            user_prompt,
-            system=system,
-            extra=extra,
-            guard=guard,
-            images=images,
-            max_rounds=MAX_SEARCH_ROUNDS,
-            on_search=on_search,
-        )
-        return raw, merge_report_hits(reports), []
-    if turn.calls:
-        logger.info("Agent steps=%s tools=%s chat=%s", turn.steps, ",".join(turn.calls), chat_id)
-    return turn.text, kit.search_hits, turn.artifacts
 
 async def _reply_or_search(
     update: Update,
@@ -1119,21 +975,6 @@ async def _reply_or_search(
         await _run_search_query(update, context, search_query)
         return
     await _run_query(update, context, model_key, prompt, trigger=trigger)
-
-
-async def _ask_provider(
-    context: ContextTypes.DEFAULT_TYPE,
-    spec: Any,
-    prompt: str,
-    *,
-    system: str,
-    images: list[Any] | None = None,
-) -> str:
-    if spec.provider == "codex":
-        return await context.bot_data["codex"].ask(prompt, system=system, model=spec.api_model)
-    return await context.bot_data["deepseek"].ask(
-        prompt, model=spec.api_model, system=system, images=images or None
-    )
 
 
 async def _run_query(
@@ -1410,7 +1251,6 @@ async def _deliver_reply(
     await _deliver_text(update, context, thinking, model_key, text)
 
 
-
 async def on_sticker(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if await _deny_if_unauthorized(update, context):
         return
@@ -1557,6 +1397,15 @@ def build_application(settings: Settings) -> Application:
     application.bot_data["deepseek"] = DeepSeekProvider(
         api_key=settings.deepseek_api_key,
         model=settings.deepseek_model,
+    )
+    # 平台无关的核心运行时：Telegram 与 MCP 适配器共用同一套编排逻辑。
+    application.bot_data["runtime"] = RanranRuntime(
+        settings,
+        skills=application.bot_data["skills"],
+        persona_extra=application.bot_data["persona_extra"],
+        deepseek=application.bot_data["deepseek"],
+        codex=application.bot_data["codex"],
+        journal=application.bot_data["daily_journal"],
     )
 
     application.add_handler(MessageHandler(filters.ALL, on_daily_message), group=-1)

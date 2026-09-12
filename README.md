@@ -157,6 +157,35 @@ codex exec --help
 
 并完成本机登录。未安装、未登录、超时或空输出时，bot 会回友好中文错误，不会把 key 写进回复。
 
+## 接入其他平台（MCP）
+
+编排逻辑已经收敛到平台无关的 `bot/core/runtime.py`：Telegram 适配器与 MCP 适配器共用同一套人设、skill、工具循环与记忆。因此同一个「然然」可以同时挂在多个平台上。
+
+```text
+Telegram 适配器 (bot/main.py)  ┐
+                              ├──→ bot/core/runtime.py ──→ 模型 / 工具 / skill / 记忆
+MCP 适配器 (adapters/mcp)     ┘
+```
+
+启动 MCP server（默认 stdio）：
+
+```powershell
+pip install -r requirements-mcp.txt
+python -m adapters.mcp.server          # stdio，给 Claude Desktop / Cursor 等用
+python -m adapters.mcp.server --http   # streamable-http，给远程平台用
+```
+
+客户端配置与工具契约见 [integrations/mcp/README.md](integrations/mcp/README.md)；把 [integrations/mcp/SKILL.md](integrations/mcp/SKILL.md) 交给 AI，它能自己完成接入。
+
+自检（会真实调用一次模型）：
+
+```powershell
+python integrations/mcp/client_example.py --chat "你好"
+```
+
+暴露的工具：`ranran_chat`（整轮对话，按 `session_id` 记上下文）、`ranran_session`、`web_search`、`write_file`、`list_skills`、`use_skill`、`search_history`。
+
+
 ## 群访问策略
 
 只允许白名单里的群。未入白名单的群：
@@ -168,6 +197,10 @@ codex exec --help
 
 ```text
 bot/main.py              入口与命令处理
+bot/core/runtime.py      平台无关核心：会话 + 提示词组装 + agent 回合
+bot/core/text.py         脱敏与分条切分（各适配器共用）
+adapters/mcp/server.py   MCP 适配器：stdio / streamable-http 暴露能力
+integrations/mcp/        接入其他平台的说明与可跑的客户端示例
 bot/harness/agent.py     agent 循环（工具调用 → 回灌 → 再问）
 bot/harness/tools.py     工具注册表与 JSON Schema 声明
 bot/harness/kit.py       内置工具：联网搜索 / 写文件 / 加载 skill / 回查历史

@@ -5,6 +5,19 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock,patch
 from bot.daily_journal import BEIJING,DailyJournal,DailySnapshot
 from bot.daily_analysis import DailyAnalyzer,split_transcript
+from bot.core.runtime import RanranRuntime
+
+def make_runtime(provider, tmp):
+    """测试用核心运行时：注入假 provider，避免真实网络调用。"""
+    settings = SimpleNamespace(
+        secrets=(), data_dir=tmp, deepseek_api_key="sk-test",
+        deepseek_model="deepseek-v4-flash", skills_dir=None, persona_output_guard=False,
+    )
+    return RanranRuntime(
+        settings, persona_extra="", deepseek=provider,
+        session_state_path=tmp / "sessions.json", session_memory_path=tmp / "memory.json",
+    )
+
 
 class JournalTests(unittest.TestCase):
     def setUp(self):
@@ -120,7 +133,7 @@ class CaptureTests(unittest.IsolatedAsyncioTestCase):
             msg=SimpleNamespace(message_id=2,reply_to_message=None,reply_text=AsyncMock())
             u=SimpleNamespace(effective_chat=SimpleNamespace(id=1,type='group'),effective_user=SimpleNamespace(id=7,full_name='小七',username=None),effective_message=msg)
             provider=SimpleNamespace(ask=AsyncMock(side_effect=['明确事实：上午准备面试。证据：本人发言。','（展开签纸）面试前先慢慢呼吸。']))
-            c=SimpleNamespace(bot=SimpleNamespace(),bot_data={'daily_journal':j,'daily_analyzer':DailyAnalyzer(),'memory':m,'locks':{},'settings':SimpleNamespace(secrets=()),'deepseek':provider,'reply_models':{},'chat_state':SimpleNamespace(get_model=lambda cid:'flash')})
+            c=SimpleNamespace(bot=SimpleNamespace(),bot_data={'daily_journal':j,'daily_analyzer':DailyAnalyzer(),'memory':m,'locks':{},'settings':SimpleNamespace(secrets=()),'deepseek':provider,'reply_models':{},'chat_state':SimpleNamespace(get_model=lambda cid:'flash'),'runtime':make_runtime(provider,Path(tempfile.mkdtemp()))})
             with patch('bot.main._deliver_reply',AsyncMock()),patch('bot.main._store_model'):
                 await _interpret_fortune(u,c,build_fortune(7,'小七',date(2026,9,5)))
             self.assertEqual(provider.ask.await_count,2)
