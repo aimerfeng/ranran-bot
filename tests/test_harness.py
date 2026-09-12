@@ -2,15 +2,13 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import AsyncMock
 
 from bot.files import FileError, create_artifact, normalize_csv, sanitize_filename
 from bot.harness.agent import BUDGET_NOTICE, Agent
 from bot.harness.kit import build_tools
 from bot.harness.skills import SkillRegistry
-from bot.harness.tools import ToolRegistry, ToolOutcome, json_tool
-from bot.harness.types import Artifact, ToolCall
+from bot.harness.tools import ToolOutcome, ToolRegistry, json_tool
+from bot.harness.types import ToolCall
 from bot.providers.deepseek import ChatResult
 from bot.websearch import parse_search_marker
 

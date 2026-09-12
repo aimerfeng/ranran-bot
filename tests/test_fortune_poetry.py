@@ -1,18 +1,25 @@
-import unittest,json,re,hashlib,importlib.util,sys
-from pathlib import Path
+import importlib.util
+import sys
+import unittest
 from collections import Counter
-from datetime import date
 from dataclasses import replace
+from datetime import date
 from io import BytesIO
+from pathlib import Path
+
 from PIL import Image
-from bot.fortune_poetry import poetry_catalog,draw_verse,verse_columns
-from bot.fortune import build_fortune,HIDDEN_SIGNS,hidden_from_ticket,render_card,BANDS
+
+from bot.fortune import BANDS, HIDDEN_SIGNS, assets_ready, build_fortune, render_card
+from bot.fortune_poetry import draw_verse, poetry_catalog, verse_columns
+
+ASSETS_HINT = "素材未下载：先运行 python scripts/fetch_fortune_assets.py"
+
 
 class PoetryTests(unittest.TestCase):
     def test_four_hundred_unique_curated_verses(self):
         data=poetry_catalog();all_rows=[]
         self.assertEqual(set(data['ordinary']),{b for _,b in BANDS})
-        for band,rows in data['ordinary'].items():
+        for _band,rows in data['ordinary'].items():
             self.assertEqual(len(rows),48)
             self.assertEqual(Counter(r['imagery'] for r in rows),{'山':12,'水':12,'花':12,'月':12})
             all_rows.extend(rows)
@@ -33,6 +40,7 @@ class PoetryTests(unittest.TestCase):
         for sign in HIDDEN_SIGNS:
             choices={draw_verse(uid,date(2026,9,5),hidden_key=sign.key).verse for uid in range(150)}
             self.assertEqual(len(choices),8)
+    @unittest.skipUnless(assets_ready(), ASSETS_HINT)
     def test_all_seven_bands_render(self):
         base=build_fortune(42,'星野',date(2026,9,5))
         for band,rows in poetry_catalog()['ordinary'].items():
@@ -40,7 +48,7 @@ class PoetryTests(unittest.TestCase):
                 f=replace(base,hidden=None,band=band,advice=row['verse'],poetry_imagery=row['imagery'])
                 im=Image.open(BytesIO(render_card(f)));self.assertEqual(im.size,(960,960));im.verify()
     def test_prompt_identifies_original_poetry(self):
-        from bot.fortune_reading import build_reading_prompt,FORTUNE_READING_SYSTEM
+        from bot.fortune_reading import FORTUNE_READING_SYSTEM, build_reading_prompt
         f=build_fortune(42,'星野',date(2026,9,5));prompt=build_reading_prompt(f)
         self.assertIn('原创拟古',prompt);self.assertIn(f.display_advice,prompt)
         self.assertIn('诗人',FORTUNE_READING_SYSTEM)

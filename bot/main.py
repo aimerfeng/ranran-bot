@@ -24,16 +24,15 @@ from telegram.ext import (
     filters,
 )
 
-from bot.sticker_commands import sticker_cmd, quote_cmd, choose_cmd
 from bot.chat_state import AutoReplyGate, ChatMemory, ChatStateStore
-from bot.daily_journal import BEIJING, DailyJournal, DailySnapshot
 from bot.core.runtime import RanranRuntime
 from bot.daily_analysis import DailyAnalyzer
+from bot.daily_journal import BEIJING, DailyJournal, DailySnapshot
 from bot.files import FileError, create_artifact, long_reply_filename, send_artifact
-from bot.harness.skills import SkillRegistry, load_skills
-from bot.fun import react_to, send_anime_image, welcome_line
-from bot.fortune import Fortune, THEME_ALIASES, THEME_HELP, send_fortune
+from bot.fortune import THEME_ALIASES, THEME_HELP, Fortune, send_fortune
 from bot.fortune_reading import FORTUNE_READING_SYSTEM, build_reading_prompt, fallback_reading
+from bot.fun import react_to, send_anime_image, welcome_line
+from bot.harness.skills import SkillRegistry, load_skills
 from bot.images import collect_images
 from bot.models import MODELS, default_key_from_settings, model_for_images, model_list_text, parse_model_key
 from bot.persona import (
@@ -43,6 +42,7 @@ from bot.persona import (
     strip_roleplay_prefix,
 )
 from bot.providers import CodexError, CodexProvider, DeepSeekError, DeepSeekProvider
+from bot.safelog import setup_logging
 from bot.settings import (
     CHAT_STATE_PATH,
     GROUP_PACKS_PATH,
@@ -52,6 +52,7 @@ from bot.settings import (
     load_settings,
     secret_fingerprint,
 )
+from bot.sticker_commands import choose_cmd, quote_cmd, sticker_cmd
 from bot.stickers import (
     MOODS,
     StickerBank,
@@ -80,10 +81,7 @@ from bot.websearch import (
 )
 from bot.whitelist import Whitelist, WhitelistError, parse_chat_id
 
-logging.basicConfig(
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    level=logging.INFO,
-)
+setup_logging(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 HELP_PUBLIC = (

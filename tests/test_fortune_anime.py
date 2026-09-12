@@ -3,13 +3,18 @@ import json
 import unittest
 from datetime import date
 from io import BytesIO
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
+
 from PIL import Image, ImageChops
-from bot.fortune import ASSETS, build_fortune, render_card
+
+from bot.fortune import ASSETS, assets_ready, build_fortune, render_card
+
+ASSETS_HINT = "素材未下载：先运行 python scripts/fetch_fortune_assets.py"
+
 
 class AnimeTests(unittest.TestCase):
+    @unittest.skipUnless(assets_ready(), ASSETS_HINT)
     def test_real_anime_background(self):
         f=build_fortune(42,'星野',date(2026,9,5))
         self.assertTrue(f.image_key.startswith('img/'))
@@ -20,6 +25,7 @@ class AnimeTests(unittest.TestCase):
         self.assertIsNone(ImageChops.difference(base.crop((480,0,960,960)),im.crop((480,0,960,960))).getbbox())
         self.assertIsNotNone(ImageChops.difference(base,im).getbbox())
 
+    @unittest.skipUnless(assets_ready(), ASSETS_HINT)
     def test_all_themes(self):
         for theme in ('genshin','arknights','pcr','touhou'):
             f=build_fortune(42,'星野',date(2026,9,5),theme=theme)
@@ -36,6 +42,7 @@ class AnimeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             build_fortune(42,'星野',theme='../../anything')
 
+    @unittest.skipUnless(assets_ready(), ASSETS_HINT)
     def test_pinned_assets(self):
         manifest=json.loads((ASSETS/'manifest.json').read_text(encoding='utf-8'))
         self.assertEqual(len(manifest['files']),597)

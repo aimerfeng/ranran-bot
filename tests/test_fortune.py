@@ -1,13 +1,16 @@
-import asyncio
 import unittest
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from PIL import Image
 from telegram.error import BadRequest
-from bot.fortune import build_fortune, render_card, send_fortune, shanghai_day
+
+from bot.fortune import assets_ready, build_fortune, render_card, send_fortune, shanghai_day
+
+ASSETS_HINT = "素材未下载：先运行 python scripts/fetch_fortune_assets.py"
+
 
 class FortuneTests(unittest.TestCase):
     def test_daily_determinism(self):
@@ -31,9 +34,10 @@ class FortuneTests(unittest.TestCase):
         self.assertEqual(bands, {'大吉', '中吉', '小吉', '末吉', '小凶', '凶', '大凶'})
 
     def test_midnight(self):
-        self.assertEqual(shanghai_day(datetime(2026, 9, 5, 15, 59, tzinfo=timezone.utc)), date(2026, 9, 5))
-        self.assertEqual(shanghai_day(datetime(2026, 9, 5, 16, 0, tzinfo=timezone.utc)), date(2026, 9, 6))
+        self.assertEqual(shanghai_day(datetime(2026, 9, 5, 15, 59, tzinfo=UTC)), date(2026, 9, 5))
+        self.assertEqual(shanghai_day(datetime(2026, 9, 5, 16, 0, tzinfo=UTC)), date(2026, 9, 6))
 
+    @unittest.skipUnless(assets_ready(), ASSETS_HINT)
     def test_card(self):
         for name in ('星野', '很长的名字' * 30, 'Alice <b> & 🌙\n换行'):
             card = render_card(build_fortune(42, name, date(2026, 9, 5)))
@@ -44,6 +48,7 @@ class FortuneTests(unittest.TestCase):
             im.verify()
 
 class DeliveryTests(unittest.IsolatedAsyncioTestCase):
+    @unittest.skipUnless(assets_ready(), ASSETS_HINT)
     async def test_photo(self):
         msg = SimpleNamespace(reply_photo=AsyncMock(), reply_text=AsyncMock())
         await send_fortune(msg, 42, '星野')

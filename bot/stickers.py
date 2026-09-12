@@ -108,14 +108,6 @@ def mood_from_emoji(emoji: str | None) -> str:
     return "嗨"
 
 
-def infer_mood(text: str) -> str | None:
-    body = text or ""
-    for mood, hints in _MOOD_HINTS:
-        if any(token in body for token in hints.split()):
-            return mood
-    return None
-
-
 def split_sticker_tag(text: str) -> tuple[str | None, str]:
     mood: str | None = None
 
@@ -126,17 +118,6 @@ def split_sticker_tag(text: str) -> tuple[str | None, str]:
 
     cleaned = _TAG_RE.sub(_keep, text or "").strip()
     return mood, cleaned
-
-
-def should_attach_sticker(trigger: str) -> bool:
-    chance = {
-        "主动接话": 0.55,
-        "@提到你": 0.35,
-        "回复你的消息": 0.35,
-        "私聊": 0.25,
-        "有人丢表情": 0.7,
-    }.get(trigger, 0.15)
-    return random.random() < chance
 
 
 class StickerBank:

@@ -1,8 +1,13 @@
 from __future__ import annotations
-import hashlib,json,re
-from pathlib import Path
-from telegram import InputSticker
+
+import hashlib
+import json
 from dataclasses import dataclass
+from pathlib import Path
+
+from telegram import InputSticker
+
+
 @dataclass(frozen=True)
 class GroupPack:
  name: str

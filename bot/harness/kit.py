@@ -10,7 +10,7 @@ from bot.files import FileError, create_artifact
 from bot.harness.skills import SkillRegistry
 from bot.harness.tools import ToolOutcome, ToolRegistry, json_tool
 from bot.harness.types import Artifact
-from bot.websearch import WebSearchError, deepseek_web_search, format_search_sources
+from bot.websearch import WebSearchError, deepseek_web_search
 
 logger = logging.getLogger(__name__)
 

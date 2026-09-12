@@ -1,4 +1,3 @@
-import asyncio
 import base64
 import unittest
 from types import SimpleNamespace
@@ -7,7 +6,6 @@ from unittest.mock import AsyncMock, patch
 from bot.images import ImagePart, collect_images, message_image_media, sniff_image_mime
 from bot.providers.deepseek import VISION_MODEL, user_content
 from bot.util import mentioned_bot
-
 
 JPEG = b"\xff\xd8\xff" + b"jpeg-body"
 PNG = b"\x89PNG\r\n\x1a\n" + b"png-body"

@@ -13,12 +13,12 @@ import argparse
 import logging
 import sys
 from types import SimpleNamespace
-from typing import Any
 
 from mcp.server.mcpserver import MCPServer
 
 from bot.core.runtime import RanranRuntime, runtime_from_env
 from bot.files import FileError, create_artifact
+from bot.safelog import setup_logging
 from bot.websearch import WebSearchError, format_search_sources
 
 logger = logging.getLogger(__name__)
@@ -196,9 +196,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("-v", "--verbose", action="store_true", help="打开调试日志")
     args = parser.parse_args(argv)
 
-    logging.basicConfig(
+    setup_logging(
         level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         stream=sys.stderr,  # stdio 传输时 stdout 只能承载协议帧
     )
     transport = "streamable-http" if args.http else args.transport

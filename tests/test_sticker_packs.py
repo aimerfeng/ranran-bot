@@ -1,7 +1,8 @@
 import unittest
-from unittest.mock import AsyncMock
-from types import SimpleNamespace as NS
 from tempfile import NamedTemporaryFile
+from types import SimpleNamespace as NS
+from unittest.mock import AsyncMock
+
 
 class PackTests(unittest.IsolatedAsyncioTestCase):
  async def test_stable_name_and_create_then_add_and_rename(self):
@@ -14,8 +15,7 @@ class PackTests(unittest.IsolatedAsyncioTestCase):
 
 
 import unittest
-from unittest.mock import AsyncMock
-from types import SimpleNamespace as NS
+
 
 class GroupPackCommandTests(unittest.IsolatedAsyncioTestCase):
  async def test_success_reports_add_sticker_link(self):

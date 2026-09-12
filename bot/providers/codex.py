@@ -36,7 +36,7 @@ class CodexProvider:
         args = _exec_args(self._cmd, self.workdir, out_path, model)
         try:
             stdout, stderr, code = await self._run(args, timeout=self.timeout, stdin=prompt)
-        except asyncio.TimeoutError as exc:
+        except TimeoutError as exc:
             raise CodexError(
                 f"Codex 执行超时（{self.timeout} 秒）。请缩短问题，或调大 CODEX_TIMEOUT_SECONDS。"
             ) from exc
@@ -66,14 +66,14 @@ class CodexProvider:
             raise CodexError(
                 "未找到 Codex CLI。请先安装并确保终端里执行 `codex --help` 可用。"
             ) from exc
-        except asyncio.TimeoutError as exc:
+        except TimeoutError as exc:
             raise CodexError("探测 Codex CLI 超时，请检查本机 Codex 是否正常。") from exc
         if help_code != 0 and "Usage:" not in help_out and "Usage:" not in help_err:
             raise CodexError("Codex CLI 无法运行。请在终端执行 `codex --help` 检查安装。")
 
         try:
             exec_out, exec_err, _ = await self._run([*cmd, "exec", "--help"], timeout=30)
-        except asyncio.TimeoutError as exc:
+        except TimeoutError as exc:
             raise CodexError("探测 `codex exec` 超时，请检查本机 Codex 是否正常。") from exc
         exec_text = f"{exec_out}\n{exec_err}"
         if "Usage:" not in exec_text and "exec" not in exec_text.lower():
@@ -105,7 +105,7 @@ class CodexProvider:
                 proc.communicate(input=raw_in),
                 timeout=timeout,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             await _kill_process(proc)
             raise
         stdout = (stdout_b or b"").decode("utf-8", errors="replace")
@@ -251,5 +251,5 @@ async def _kill_process(proc: asyncio.subprocess.Process) -> None:
         return
     try:
         await asyncio.wait_for(proc.communicate(), timeout=5)
-    except (asyncio.TimeoutError, ProcessLookupError):
+    except (TimeoutError, ProcessLookupError):
         pass

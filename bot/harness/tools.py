@@ -3,10 +3,11 @@ from __future__ import annotations
 
 import inspect
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable
+from typing import Any
 
-from bot.harness.types import Artifact, ToolOutcome
+from bot.harness.types import ToolOutcome
 
 logger = logging.getLogger(__name__)
 

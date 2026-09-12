@@ -5,9 +5,10 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from bot.chat_state import ChatMemory
+from bot.core.runtime import RanranRuntime
 from bot.files import FileError
 from bot.websearch import SearchHit
-from bot.core.runtime import RanranRuntime
+
 
 def make_runtime(provider, tmp):
     """测试用核心运行时：注入假 provider，避免真实网络调用。"""

@@ -84,6 +84,7 @@ class McpServerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_web_search_reports_failure_without_raising(self):
         from unittest.mock import patch
+
         from bot.websearch import WebSearchError
 
         with patch("bot.core.runtime.deepseek_web_search", AsyncMock(side_effect=WebSearchError("服务超时"))):

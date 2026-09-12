@@ -163,7 +163,7 @@ async def _ensure_group_pack(update, context, file_id: str) -> None:
         logger.exception('Group sticker pack update failed: %s', exc)
         # The sticker itself was already delivered; explain the separate pack failure.
         await update.effective_message.reply_text(
-            '贴纸已经做好了，但加入群贴纸包失败：%s' % str(exc)[:240]
+            f'贴纸已经做好了，但加入群贴纸包失败：{str(exc)[:240]}'
         )
 
 

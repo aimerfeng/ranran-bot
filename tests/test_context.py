@@ -1,11 +1,13 @@
-import asyncio,json,tempfile,unittest
+import asyncio
+import tempfile
+import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock,patch
+from unittest.mock import AsyncMock, patch
+
 from bot.chat_state import ChatMemory
 from bot.core.runtime import RanranRuntime
 from bot.persona import build_user_prompt
-
 
 
 def make_runtime(provider, tmp):

@@ -9,19 +9,28 @@ import os
 import random
 import unicodedata
 from collections import OrderedDict
-from threading import Lock
 from dataclasses import dataclass, replace
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
+from threading import Lock
 
 from telegram.error import TelegramError
 
-from bot.fortune_poetry import draw_verse, poetry_catalog, verse_columns
+from bot.fortune_poetry import draw_verse, verse_columns
 
 logger = logging.getLogger(__name__)
 ASSETS = Path(__file__).parent / 'assets' / 'fortune'
+
+
+def assets_ready() -> bool:
+    """第三方签图与字体是否就绪。
+
+    仓库不含这些素材（版权原因），未下载时 bot 会自动降级为纯文字签文；
+    依赖素材的测试也据此跳过，保证干净检出上测试是全绿的。
+    """
+    return (ASSETS / 'img').is_dir() and (ASSETS / 'font' / 'Mamelon.otf').is_file()
 SHANGHAI = timezone(timedelta(hours=8))
 THEMES = {
     'genshin': '原神', 'arknights': '明日方舟', 'pcr': '公主连结', 'touhou': '东方',
@@ -133,7 +142,7 @@ class Fortune:
 
 
 def shanghai_day(now: datetime | None = None) -> date:
-    return (now or datetime.now(timezone.utc)).astimezone(SHANGHAI).date()
+    return (now or datetime.now(UTC)).astimezone(SHANGHAI).date()
 
 
 @lru_cache(maxsize=1)
@@ -214,8 +223,9 @@ def render_card(f: Fortune) -> bytes:
     Layout follows nonebot_plugin_fortune/utils.py (MIT, KafCoppelia).
     Uses Pillow's modern anchors instead of removed ImageFont.getsize().
     """
-    from PIL import Image, ImageDraw, ImageFont
     import math
+
+    from PIL import Image, ImageDraw, ImageFont
 
     with Image.open(ASSETS / f.image_key) as source:
         im = source.convert('RGB').resize((960, 960), Image.Resampling.LANCZOS)

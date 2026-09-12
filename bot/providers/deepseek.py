@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import random
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -15,6 +17,14 @@ logger = logging.getLogger(__name__)
 
 DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"
 VISION_MODEL = "deepseek-v4-flash-vision-exp"
+
+# 补全请求是幂等的，暂时性失败（网络抖动 / 限流 / 网关 5xx）值得再试一次，
+# 而不是直接把错误甩给群里的用户。
+RETRY_ATTEMPTS = 3
+RETRY_DELAY = 1.2
+RETRY_JITTER = 0.5
+RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
+TIMEOUT = httpx.Timeout(connect=15.0, read=120.0, write=30.0, pool=15.0)
 
 
 class DeepSeekError(RuntimeError):
@@ -55,6 +65,37 @@ class DeepSeekProvider:
         self.api_key = api_key
         self.model = model
 
+    async def _post(self, payload: dict[str, Any], headers: dict[str, str]) -> httpx.Response:
+        """发送一次补全请求；暂时性失败按退避重试，其余错误交给调用方处理。"""
+        response: httpx.Response | None = None
+        error: DeepSeekError | None = None
+        for attempt in range(1, RETRY_ATTEMPTS + 1):
+            response, error = None, None
+            try:
+                async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+                    response = await client.post(DEEPSEEK_URL, headers=headers, json=payload)
+            except httpx.TimeoutException:
+                error = DeepSeekError("DeepSeek 请求超时，请稍后再试。")
+            except httpx.HTTPError as exc:
+                logger.warning("DeepSeek network error: %s", exc)
+                error = DeepSeekError("无法连接 DeepSeek，请检查网络后重试。")
+            else:
+                if response.status_code not in RETRY_STATUSES:
+                    return response
+            if attempt < RETRY_ATTEMPTS:
+                delay = RETRY_DELAY * attempt + random.uniform(0.0, RETRY_JITTER)
+                logger.warning(
+                    "DeepSeek 请求失败，%.1fs 后重试（第 %s/%s 次，status=%s）",
+                    delay,
+                    attempt,
+                    RETRY_ATTEMPTS,
+                    response.status_code if response is not None else "网络错误",
+                )
+                await asyncio.sleep(delay)
+        if response is not None:
+            return response
+        raise error or DeepSeekError("DeepSeek 请求失败，请稍后再试。")
+
     async def ask(
         self,
         prompt: str,
@@ -84,15 +125,7 @@ class DeepSeekProvider:
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
-        timeout = httpx.Timeout(connect=15.0, read=120.0, write=30.0, pool=15.0)
-        try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                response = await client.post(DEEPSEEK_URL, headers=headers, json=payload)
-        except httpx.TimeoutException as exc:
-            raise DeepSeekError("DeepSeek 请求超时，请稍后再试。") from exc
-        except httpx.HTTPError as exc:
-            logger.warning("DeepSeek network error: %s", exc)
-            raise DeepSeekError("无法连接 DeepSeek，请检查网络后重试。") from exc
+        response = await self._post(payload, headers)
 
         if response.status_code == 401:
             logger.warning(
@@ -147,15 +180,7 @@ class DeepSeekProvider:
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
-        timeout = httpx.Timeout(connect=15.0, read=120.0, write=30.0, pool=15.0)
-        try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                response = await client.post(DEEPSEEK_URL, headers=headers, json=payload)
-        except httpx.TimeoutException as exc:
-            raise DeepSeekError("DeepSeek 请求超时，请稍后再试。") from exc
-        except httpx.HTTPError as exc:
-            logger.warning("DeepSeek network error: %s", exc)
-            raise DeepSeekError("无法连接 DeepSeek，请检查网络后重试。") from exc
+        response = await self._post(payload, headers)
 
         if response.status_code == 401:
             raise DeepSeekError("DeepSeek API Key 无效，请检查 DEEPSEEK_API_KEY。")

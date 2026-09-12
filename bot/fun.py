@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import hashlib
 import logging
 import random
-from datetime import date
 from io import BytesIO
 
 import httpx
@@ -78,15 +76,6 @@ async def react_to(message: Message, text: str, *, big: bool = False) -> bool:
 
 def welcome_line(name: str) -> str:
     return random.choice(_WELCOME).format(name=name)
-
-
-def daily_fortune(user_id: int, name: str) -> str:
-    seed = f"{user_id}:{date.today().isoformat()}".encode()
-    rng = random.Random(hashlib.sha256(seed).hexdigest())
-    score = rng.randint(1, 100)
-    lucky = rng.choice(("红", "粉", "黑", "白", "蓝", "金"))
-    comment = next(text for floor, text in _FORTUNE_BANDS if score >= floor)
-    return f"{name} 今日运势 {score}\n幸运色：{lucky}\n{comment}"
 
 
 async def _json(client: httpx.AsyncClient, url: str) -> dict:

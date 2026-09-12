@@ -6,9 +6,9 @@ from unittest.mock import AsyncMock, patch
 
 from bot.core.runtime import RanranRuntime, Reply, session_key
 from bot.harness.skills import SkillRegistry
-from bot.providers.deepseek import ChatResult
 from bot.harness.types import ToolCall
 from bot.models import MODELS
+from bot.providers.deepseek import ChatResult
 from bot.websearch import SearchHit, SearchReport
 
 

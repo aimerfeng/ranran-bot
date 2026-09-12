@@ -1,0 +1,15 @@
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = ["venv", "data", "artifacts", "assets", "fonts"]
+
+[tool.ruff.lint]
+# 只启用"能出 bug"的规则；纯风格规则不引入，避免无意义的大规模改动。
+select = ["E", "F", "W", "I", "UP", "B", "C4"]
+ignore = [
+  "E501",  # 行宽靠评审把关，中文长行硬折反而更难读
+  "E402",  # 少数地方需要在 sys.path 调整后再导入
+  "B008",
+  "E701",  # `if not text: return` 这类单行守卫是刻意写法
+  "E702",  # 同上（测试里紧凑构造 fixture）
+]

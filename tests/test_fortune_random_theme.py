@@ -1,13 +1,15 @@
 import unittest
-from datetime import date
 from dataclasses import replace
+from datetime import date
 from unittest.mock import patch
-from bot.fortune import build_fortune, THEMES
+
+from bot.fortune import THEMES, build_fortune
+
 
 class RandomThemeTests(unittest.TestCase):
     def test_consecutive_random_themes_change_without_reroll(self):
         rows = [build_fortune(99881, '测试', date(2026,9,5)) for _ in range(30)]
-        for a,b in zip(rows,rows[1:]):
+        for a,b in zip(rows,rows[1:],strict=False):
             self.assertNotEqual(a.theme,b.theme)
             self.assertEqual(a,replace(b,theme=a.theme,image_key=a.image_key))
             self.assertTrue(b.image_key.startswith('img/'+b.theme+'/'))

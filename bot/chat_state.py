@@ -14,6 +14,7 @@ class ChatStateStore:
         self.path = path
         self.default_model = resolve_model_key(default_model)
         self._data: dict[str, dict] = {}
+        self._dirty: set[str] = set()
         self._load()
 
     def _load(self) -> None:
@@ -27,13 +28,32 @@ class ChatStateStore:
             self._data = raw
 
     def _save(self) -> None:
+        """原子写入，并且只覆盖自己改过的会话。
+
+        同一个状态文件可能被多个进程使用（比如同时开着两个 MCP 客户端），
+        整份覆盖会把别的进程刚写的其它会话抹掉；这里先读回磁盘内容再按脏键合并。
+        同一会话的并发写仍是后写覆盖（可接受，代价是多丢一条设置）。
+        """
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        data = dict(self._data)
+        if self._dirty:
+            try:
+                disk = json.loads(self.path.read_text(encoding="utf-8"))
+                if isinstance(disk, dict):
+                    data = disk
+                    for key in self._dirty:
+                        if key in self._data:
+                            data[key] = self._data[key]
+                    self._data = data
+            except (OSError, json.JSONDecodeError):
+                pass
         tmp = self.path.with_suffix(".tmp")
         tmp.write_text(
-            json.dumps(self._data, ensure_ascii=False, indent=2) + "\n",
+            json.dumps(data, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
         tmp.replace(self.path)
+        self._dirty.clear()
 
     def _entry(self, chat_id: int) -> dict:
         key = str(chat_id)
@@ -52,6 +72,7 @@ class ChatStateStore:
         key = resolve_model_key(model_key, self.default_model)
         entry = self._entry(chat_id)
         entry["model"] = key
+        self._dirty.add(str(chat_id))
         self._save()
         return key
 
@@ -61,6 +82,7 @@ class ChatStateStore:
     def set_auto_reply(self, chat_id: int, enabled: bool) -> None:
         entry = self._entry(chat_id)
         entry["auto_reply"] = bool(enabled)
+        self._dirty.add(str(chat_id))
         self._save()
 
     def nsfw(self, chat_id: int) -> bool:
@@ -70,6 +92,7 @@ class ChatStateStore:
     def set_nsfw(self, chat_id: int, enabled: bool) -> None:
         entry = self._entry(chat_id)
         entry["nsfw"] = bool(enabled)
+        self._dirty.add(str(chat_id))
         self._save()
 
 
@@ -106,13 +129,35 @@ class ChatMemory:
                 import logging
                 logging.getLogger(__name__).warning('Recent chat memory could not be loaded; starting empty')
 
+    def _merged_rows(self) -> dict[str, list[dict]]:
+        """把自己内存里的行与磁盘上的行按顺序合并去重（可能有两个进程同时在写）。"""
+        merged: dict[str, list[dict]] = {}
+        try:
+            if self.path is not None and self.path.exists():
+                disk = json.loads(self.path.read_text(encoding='utf-8'))
+                if isinstance(disk, dict):
+                    merged = {str(k): list(v) for k, v in disk.items() if isinstance(v, list)}
+        except (OSError, ValueError):
+            merged = {}
+        for chat_id, rows in self._lines.items():
+            key = str(chat_id)
+            seen = {(r.get('name'), r.get('text'), r.get('message_id')) for r in merged.get(key, [])}
+            combined = list(merged.get(key, []))
+            for row in rows:
+                marker = (row.get('name'), row.get('text'), row.get('message_id'))
+                if marker not in seen:
+                    seen.add(marker)
+                    combined.append(row)
+            merged[key] = combined[-self.limit:]
+        return merged
+
     def _save(self) -> None:
         if self.path is None:
             return
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             tmp = self.path.with_suffix('.tmp')
-            tmp.write_text(json.dumps({str(k): list(v) for k, v in self._lines.items()}, ensure_ascii=False), encoding='utf-8')
+            tmp.write_text(json.dumps(self._merged_rows(), ensure_ascii=False), encoding='utf-8')
             tmp.replace(self.path)
         except OSError:
             import logging

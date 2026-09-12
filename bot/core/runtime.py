@@ -6,9 +6,10 @@ from __future__ import annotations
 
 import logging
 import zlib
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 from bot.chat_state import ChatMemory, ChatStateStore
 from bot.core.text import sanitize_text
@@ -22,14 +23,13 @@ from bot.persona import (
     DEEPSEEK_PERSONA,
     OUTPUT_GUARD,
     build_roleplay_prompt,
-    compose_roleplay,
     build_user_prompt,
+    compose_roleplay,
     compose_system,
     load_extra_persona,
     strip_roleplay_prefix,
 )
-from bot.providers.codex import CodexError, CodexProvider
-from bot.providers.deepseek import DeepSeekError, DeepSeekProvider, ToolsUnsupported, user_content
+from bot.providers.deepseek import DeepSeekProvider, user_content
 from bot.settings import Settings, load_settings
 from bot.websearch import (
     MAX_SEARCH_ROUNDS,

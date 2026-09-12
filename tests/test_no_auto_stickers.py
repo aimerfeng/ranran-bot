@@ -1,8 +1,9 @@
-import ast,unittest
-from pathlib import Path
+import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock,Mock,patch
+from unittest.mock import AsyncMock, Mock, patch
+
 from bot.chat_state import ChatMemory
+
 
 class NoAutoStickerTests(unittest.IsolatedAsyncioTestCase):
     def fixture(self):
@@ -55,7 +56,7 @@ class NoAutoStickerTests(unittest.IsolatedAsyncioTestCase):
 
 class PromptTests(unittest.TestCase):
     def test_models_instructed_to_avoid_sticker_tags(self):
-        from bot.persona import IMMERSIVE_STYLE
         from bot.fortune_reading import FORTUNE_READING_SYSTEM
+        from bot.persona import IMMERSIVE_STYLE
         self.assertNotIn('想丢表情包可以',IMMERSIVE_STYLE)
         self.assertNotIn('可选一个合适的 [表情:标签]',FORTUNE_READING_SYSTEM)

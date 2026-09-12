@@ -1,12 +1,12 @@
-import unittest
 import tempfile
+import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from bot.chat_state import ChatMemory
-from bot.websearch import MAX_SEARCH_ROUNDS, SearchHit, SearchReport, WebSearchError
 from bot.core.runtime import RanranRuntime
+from bot.websearch import MAX_SEARCH_ROUNDS, SearchHit, SearchReport, WebSearchError
 
 
 def _hit(url: str = "https://news.example/1") -> SearchHit:

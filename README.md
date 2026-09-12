@@ -1,5 +1,7 @@
 # ranran-bot · 然然
 
+[![tests](https://github.com/aimerfeng/ranran-bot/actions/workflows/tests.yml/badge.svg)](https://github.com/aimerfeng/ranran-bot/actions/workflows/tests.yml)
+
 一个跑在 Telegram 群里的中文 AI 机器人，角色是虚构的二次元女生「然然」。
 
 它不是一问一答的套壳：对话走自建的 **agent harness**——原生 function calling 的工具循环（联网搜索 / 生成文件 / 按需加载 skill / 回查聊天记录），外加一套可嵌套的 skill 包来管住说话方式与上下文。模型可接 DeepSeek API，也可以接本机 Codex CLI。
@@ -211,6 +213,7 @@ bot/harness/kit.py       内置工具：联网搜索 / 写文件 / 加载 skill 
 bot/harness/skills.py    嵌套 skill 加载器（include 展开、关键词激活、预算）
 bot/whitelist.py         群白名单
 bot/settings.py          环境变量与 config.yaml
+bot/safelog.py           日志脱敏：token / key / 代理凭据不落盘
 bot/files.py             生成 md/txt/csv 并发成 Telegram 文档
 bot/websearch.py         DeepSeek 原生联网搜索（Anthropic 兼容 Messages API）
 bot/persona.py           角色设定、外部人设加载、输出纪律、角色扮演栈组装
@@ -218,8 +221,23 @@ bot/providers/codex.py   本机 Codex CLI
 bot/providers/deepseek.py   Chat Completions / 原生工具调用
 skills/                  嵌套 skill 包（Markdown + frontmatter）
 config.yaml              初始白名单
+.github/workflows/       CI：ruff + 全量测试
+requirements-dev.txt     开发依赖（ruff / coverage）
 .env.example             环境变量模板
 ```
+
+## 开发与测试
+
+```powershell
+pip install -r requirements-dev.txt
+ruff check .                              # 静态检查（CI 同一套规则）
+python -m unittest discover -s tests -v   # 193 个用例，全部本地 mock，不联网
+```
+
+- CI：每次 push / PR 由 GitHub Actions 跑 ruff + 全量测试（见 `.github/workflows/tests.yml`）。
+- 素材缺失时（干净检出）依赖签图与字体的 8 个用例会自动跳过，其余照常执行，所以新克隆的仓库测试也是绿的。
+- 想连素材一起验证：先 `python scripts\fetch_fortune_assets.py` 再跑测试。
+- 调试开关：`PERSONA_OUTPUT_GUARD=off` 关输出纪律；`REPLY_FILE_THRESHOLD=0` 关长回复转文件；`YUN_FONT_PATH` / `BOT_CJK_FONT` 指定中文字体。
 
 ## 第三方素材
 
@@ -241,6 +259,6 @@ python scripts\fetch_fortune_assets.py
 
 ## 安全提醒
 
-- `.env`、`data/`、`*.log`、`artifacts/` 已在 `.gitignore` 中排除。**运行日志会包含 bot token**（Telegram API 的 URL 里带 token），不要提交或外发。
+- `.env`、`data/`、`*.log`、`artifacts/` 已在 `.gitignore` 中排除。**日志不再写明文密钥**：`bot/safelog.py` 会把 bot token / API key / 代理凭据替换成占位符，并把 httpx 的请求日志降到 WARNING（它的 URL 里带着 token）。即便如此，旧日志与 `data/` 仍不要提交或外发。
 - `data/` 里有真实聊天记录（`chat_memory.json`）、消息日志（`daily_messages.sqlite3`）与群白名单，同样不要外发。
 - 如果 token 曾进过公开仓库或截图，去 @BotFather 用 `/revoke` 重新签发。

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 
-from bot.fortune import Fortune, THEMES
+from bot.fortune import THEMES, Fortune
 
 FORTUNE_READING_SYSTEM = """本轮任务：沉浸式每日解签。
 签图已经发送。你仍是然然，像坐在对方面前，展开签纸、轻声读完，再把自己的理解告诉对方。

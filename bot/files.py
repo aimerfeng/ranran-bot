@@ -45,7 +45,7 @@ def normalize_csv(content: str) -> str:
     text = (content or "").replace("\r\n", "\n").replace("\r", "\n").strip("\n")
     if not text:
         raise FileError("CSV 内容是空的")
-    rows = [row for row in csv.reader(io.StringIO(text))]
+    rows = list(csv.reader(io.StringIO(text)))
     if not rows:
         raise FileError("CSV 解析后没有任何行")
     out = io.StringIO()
@@ -59,6 +59,28 @@ def long_reply_filename(*, stem: str = "然然的回复", when: datetime | None 
     """长回复落成文件时用的名字，带时间戳避免重名。"""
     stamp = (when or datetime.now()).strftime("%Y%m%d-%H%M%S")
     return f"{stem}-{stamp}.md"
+
+
+OUTBOX_RETENTION_DAYS = 7
+
+
+def prune_outbox(directory: Path, *, days: int = OUTBOX_RETENTION_DAYS, now: float | None = None) -> int:
+    """清掉过期产物：这些文件已经发出去过，留着只会把磁盘吃满。"""
+    directory = Path(directory)
+    if days <= 0 or not directory.is_dir():
+        return 0
+    cutoff = (now if now is not None else time.time()) - days * 86400
+    removed = 0
+    for item in directory.rglob("*"):
+        try:
+            if item.is_file() and item.stat().st_mtime < cutoff:
+                item.unlink()
+                removed += 1
+        except OSError:
+            continue
+    if removed:
+        logger.info("Pruned %s expired files from %s", removed, directory)
+    return removed
 
 
 def create_artifact(directory: Path, *, filename: str, content: str, fmt: str = "") -> Artifact:
@@ -77,6 +99,7 @@ def create_artifact(directory: Path, *, filename: str, content: str, fmt: str = 
         text = normalize_csv(text)
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
+    prune_outbox(directory)
     path = directory / f"{int(time.time())}-{name}"
     # 直接写字节：文本模式会把 CSV 的 \r\n 再转义成 \r\r\n，Excel 会看到空行。
     path.write_bytes(text.encode("utf-8-sig" if extension == ".csv" else "utf-8"))

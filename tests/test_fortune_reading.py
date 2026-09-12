@@ -1,15 +1,16 @@
-import json,tempfile,unittest
+import tempfile
+import unittest
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
-from dataclasses import replace
 from types import SimpleNamespace
-from unittest.mock import AsyncMock,patch
-from bot.fortune import THEMES,THEME_ALIASES,THEME_HELP,HIDDEN_SIGNS,build_fortune,send_fortune
-from bot.fortune_reading import build_reading_prompt,fallback_reading,FORTUNE_READING_SYSTEM
-from bot.chat_state import ChatMemory
-from bot.providers import DeepSeekError
-from bot.core.runtime import RanranRuntime
+from unittest.mock import AsyncMock, patch
 
+from bot.chat_state import ChatMemory
+from bot.core.runtime import RanranRuntime
+from bot.fortune import HIDDEN_SIGNS, THEME_ALIASES, THEME_HELP, THEMES, build_fortune, send_fortune
+from bot.fortune_reading import FORTUNE_READING_SYSTEM, build_reading_prompt, fallback_reading
+from bot.providers import DeepSeekError
 
 
 def make_runtime(provider, tmp):
@@ -40,7 +41,7 @@ class ReadingTests(unittest.TestCase):
         self.assertGreater(len(fallback_reading(f)),110)
         self.assertIn('空白',fallback_reading(f))
     def test_no_forced_tiny_responses(self):
-        from bot.persona import DEEPSEEK_PERSONA,CODEX_SYSTEM
+        from bot.persona import CODEX_SYSTEM, DEEPSEEK_PERSONA
         self.assertNotIn('@你 / 回复你 / 私聊：一到三句',DEEPSEEK_PERSONA)
         self.assertIn('沉浸',DEEPSEEK_PERSONA)
         self.assertIn('沉浸',CODEX_SYSTEM)

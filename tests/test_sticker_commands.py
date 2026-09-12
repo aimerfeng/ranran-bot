@@ -1,9 +1,10 @@
 import importlib.util
 import unittest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace as NS
 from unittest.mock import AsyncMock, patch
-from telegram import InputFile, Update, Message, Chat, User, PhotoSize, Document, Sticker, MessageEntity
+
+from telegram import Chat, InputFile, Message, MessageEntity, Update, User
 from telegram.error import BadRequest
 from test_sticker_maker import image_bytes
 
@@ -22,7 +23,8 @@ class CommandTests(unittest.IsolatedAsyncioTestCase):
         return update,ctx
 
     def source(self, **kw):
-        return NS(photo=(),document=None,sticker=None,animation=None,video=None,text=None,caption=None,from_user=NS(full_name='小七'),sender_chat=None,forward_origin=None,message_id=123,**kw) if not kw else NS(**dict(dict(photo=(),document=None,sticker=None,animation=None,video=None,text=None,caption=None,from_user=NS(full_name='小七'),sender_chat=None,forward_origin=None,message_id=123),**kw))
+        base={'photo':(),'document':None,'sticker':None,'animation':None,'video':None,'text':None,'caption':None,'from_user':NS(full_name='小七'),'sender_chat':None,'forward_origin':None,'message_id':123}
+        return NS(**base) if not kw else NS(**{**base,**kw})
 
     async def test_missing_source_help(self):
         m=self.module(); u,c=self.fixture()
@@ -100,10 +102,11 @@ class CommandTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_menu_and_routing(self):
         self.module()
-        from bot.main import PUBLIC_COMMANDS,HELP_PUBLIC,build_application
-        from bot.settings import Settings
-        from tempfile import TemporaryDirectory
         from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        from bot.main import HELP_PUBLIC, PUBLIC_COMMANDS, build_application
+        from bot.settings import Settings
         with TemporaryDirectory() as tmp:
             settings=Settings(Path(tmp),Path(tmp),'123:abc',7,'','deepseek-chat',180,())
             app=build_application(settings)
@@ -164,7 +167,7 @@ class CommandTests(unittest.IsolatedAsyncioTestCase):
     async def test_real_telegram_command_with_bot_suffix(self):
         m=self.module()
         bot=NS(username='mybot')
-        msg=Message(message_id=2,date=datetime.now(timezone.utc),chat=Chat(-100,'supergroup'),from_user=User(7,'小七',False),
+        msg=Message(message_id=2,date=datetime.now(UTC),chat=Chat(-100,'supergroup'),from_user=User(7,'小七',False),
                     text='/sticker@mybot 我真的谢',entities=[MessageEntity('bot_command',0,14)])
         msg.set_bot(bot)
         from telegram.ext import CommandHandler
@@ -197,7 +200,6 @@ class CommandTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_plural_stickers_routes_media_to_maker_and_keeps_inventory_without_media(self):
         from bot.main import stickers_cmd
-        from bot.sticker_commands import sticker_cmd
         u,c=self.fixture('/stickers',self.source(photo=[NS(file_id='a',file_unique_id='a',file_size=50)]))
         with patch('bot.main.sticker_cmd', new=AsyncMock()) as maker:
             await stickers_cmd(u,c)

@@ -1,12 +1,17 @@
 import unittest
 from collections import Counter
-from datetime import date
 from dataclasses import replace
+from datetime import date
 from io import BytesIO
 from types import SimpleNamespace
-from unittest.mock import AsyncMock,patch
+from unittest.mock import AsyncMock, patch
+
 from PIL import Image
-from bot.fortune import build_fortune,render_card,send_fortune,HIDDEN_SIGNS,hidden_from_ticket
+
+from bot.fortune import HIDDEN_SIGNS, assets_ready, build_fortune, hidden_from_ticket, render_card, send_fortune
+
+ASSETS_HINT = "素材未下载：先运行 python scripts/fetch_fortune_assets.py"
+
 
 class HiddenTests(unittest.TestCase):
     def test_exact_odds(self):
@@ -23,6 +28,7 @@ class HiddenTests(unittest.TestCase):
             self.assertEqual(a.hidden,b.hidden)
             self.assertEqual(a.advice,b.advice)
             self.assertEqual(a.hidden,build_fortune(uid,'甲',date(2026,9,6)).hidden)
+    @unittest.skipUnless(assets_ready(), ASSETS_HINT)
     def test_hidden_all_render_and_text(self):
         base=build_fortune(42,'星野',date(2026,9,6))
         for sign in HIDDEN_SIGNS:
@@ -37,6 +43,7 @@ class HiddenTests(unittest.TestCase):
         for sign in HIDDEN_SIGNS:self.assertNotIn(sign.title,THEME_ALIASES)
 
 class HiddenDeliveryTests(unittest.IsolatedAsyncioTestCase):
+    @unittest.skipUnless(assets_ready(), ASSETS_HINT)
     async def test_caption_and_fallback(self):
         f=replace(build_fortune(42,'星野',date(2026,9,6)),hidden=HIDDEN_SIGNS[-1])
         msg=SimpleNamespace(reply_photo=AsyncMock(),reply_text=AsyncMock())
