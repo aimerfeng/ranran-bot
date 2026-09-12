@@ -321,5 +321,31 @@ class LengthLabelTests(unittest.TestCase):
         self.assertEqual(parse_length_label("??"), "normal")
         self.assertEqual(parse_length_label(""), "normal")
 
+
+
+class HeartbeatTests(unittest.IsolatedAsyncioTestCase):
+    """心跳：supervisor 靠它判断 bot 是否还活着（日志被降噪后不能只看日志）。"""
+
+    async def test_heartbeat_writes_file(self):
+        import tempfile
+        from pathlib import Path
+        from types import SimpleNamespace
+
+        from bot.main import _heartbeat_once
+
+        with tempfile.TemporaryDirectory() as td:
+            data_dir = Path(td)
+            application = SimpleNamespace(bot_data={"settings": SimpleNamespace(data_dir=data_dir)})
+            await _heartbeat_once(application)
+            beat = data_dir / "heartbeat.txt"
+            self.assertTrue(beat.is_file())
+            self.assertRegex(beat.read_text(encoding="utf-8").strip(), r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")
+
+    async def test_heartbeat_interval_is_below_supervisor_threshold(self):
+        from bot.main import HEARTBEAT_SECONDS
+
+        # supervisor 默认 8 分钟没心跳就重启，心跳必须留出足够余量
+        self.assertLessEqual(HEARTBEAT_SECONDS, 240)
+
 if __name__ == "__main__":
     unittest.main()

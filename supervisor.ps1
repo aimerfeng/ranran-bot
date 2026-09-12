@@ -11,12 +11,20 @@ function Log([string]$msg) {
     Write-Output ("[{0}] {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $msg)
 }
 
-function Log-Stale([int]$maxMinutes = 6) {
-    if (-not (Test-Path $errLog)) { return $false }
-    try {
-        $m = (Get-Item $errLog -ErrorAction Stop).LastWriteTime
-    } catch { return $false }
-    return ((Get-Date) - $m).TotalMinutes -gt $maxMinutes
+# bot 每 2 分钟写一次 data/heartbeat.txt。优先看它：日志被降噪后（httpx 静音），
+# 空闲期的日志时间戳不再能代表"活着"，只看日志会把正常空闲误判成卡死。
+$beatFile = Join-Path $root 'data\heartbeat.txt'
+
+function Log-Stale([int]$maxMinutes = 8) {
+    $stamp = $null
+    if (Test-Path $beatFile) {
+        try { $stamp = (Get-Item $beatFile -ErrorAction Stop).LastWriteTime } catch { $stamp = $null }
+    }
+    if (-not $stamp -and (Test-Path $errLog)) {
+        try { $stamp = (Get-Item $errLog -ErrorAction Stop).LastWriteTime } catch { $stamp = $null }
+    }
+    if (-not $stamp) { return $false }
+    return ((Get-Date) - $stamp).TotalMinutes -gt $maxMinutes
 }
 
 Log 'supervisor started'
@@ -28,7 +36,7 @@ while ($true) {
     $reason   = ''
     while (-not $p.HasExited) {
         Start-Sleep -Seconds 45
-        if (Log-Stale) { $reason = 'hung (no log activity > 6 min)'; break }
+        if (Log-Stale) { $reason = 'hung (no heartbeat > 8 min)'; break }
         if ((Get-Date) -ge $deadline) { $reason = '12h lifetime reached'; break }
     }
     if ($p.HasExited) {

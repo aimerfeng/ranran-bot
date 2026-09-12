@@ -4,6 +4,8 @@ import asyncio
 import json
 import logging
 import random
+import time
+from datetime import datetime
 from typing import Any
 
 from telegram import (
@@ -1365,8 +1367,46 @@ async def _register_commands(application: Application) -> None:
     logger.info("Bot commands registered for default, group, private, and whitelist chats")
 
 
+# supervisor.ps1 靠"日志有没有动静"判断 bot 是否卡死。httpx 的请求日志被降噪后，
+# 空闲期日志可以十几分钟不写一行，会被误判成卡死而反复重启（重启期间的群消息会被丢掉）。
+# 所以这里主动打心跳：文件给 supervisor 看，日志行给人看。
+HEARTBEAT_SECONDS = 120
+
+
+async def _heartbeat_once(application: Application) -> None:
+    """写一次心跳（文件 + 日志）。"""
+    settings: Settings = application.bot_data["settings"]
+    stamp = datetime.now(BEIJING).strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        (settings.data_dir / "heartbeat.txt").write_text(stamp + "\n", encoding="utf-8")
+    except OSError:
+        logger.debug("Heartbeat file not writable")
+
+
+async def _heartbeat_loop(application: Application) -> None:
+    started = time.monotonic()
+    while True:
+        await asyncio.sleep(HEARTBEAT_SECONDS)
+        await _heartbeat_once(application)
+        logger.info("Heartbeat: uptime=%s 分钟", int((time.monotonic() - started) // 60))
+
+
+async def post_shutdown(application: Application) -> None:
+    """收尾：停心跳、落一次状态，退出时留一行明确的日志。"""
+    task = application.bot_data.get("heartbeat_task")
+    if isinstance(task, asyncio.Task):
+        task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):  # noqa: BLE001 - 退出路径不该再抛
+            pass
+    logger.info("Bot shutdown complete")
+
+
 async def post_init(application: Application) -> None:
     await _register_commands(application)
+    await _heartbeat_once(application)
+    application.bot_data["heartbeat_task"] = asyncio.create_task(_heartbeat_loop(application))
     try:
         await application.bot_data["stickers"].ensure_defaults(application.bot)
         logger.info("Sticker bank ready: %s", application.bot_data["stickers"].count())
@@ -1385,6 +1425,7 @@ def build_application(settings: Settings) -> Application:
         .token(settings.telegram_bot_token)
         .concurrent_updates(True)
         .post_init(post_init)
+        .post_shutdown(post_shutdown)
         .build()
     )
     application.bot_data["settings"] = settings
