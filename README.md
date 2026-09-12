@@ -17,11 +17,15 @@
 - 多轮自动搜索：一轮搜到的信息不够时，模型可以再要一轮（最多 3 轮，结果累积回灌），最后附上去重后的全部来源；某轮失败不会丢掉已有材料
 - 回复机器人消息：继续用该消息对应的模型
 - 仅 owner 私聊：`/whitelist`、`/whitelist_add <chat_id>`、`/whitelist_remove <chat_id>`、`/persona`、`/skill`
-- `/nsfw on|off`：按聊天开关「外部人设」注入（**默认关、仅 owner**）。人设正文由使用者在仓库外自行提供，仓库内不含此类内容
+- `/nsfw on|off`：按聊天开关「角色扮演模式」（**默认关、仅 owner**）。人设正文由使用者在仓库外自行提供，仓库内不含此类内容
+- 两个模式是**两套完全独立的系统提示词**，不会互相污染：
+  - 普通模式：内置然然人设 + skill + 输出纪律（助手式对话）
+  - 角色扮演模式：**整段系统提示词就是那份人设文件本身**——内置人设、skill、输出纪律全部停用；用户侧提示词换成前情提要式，长回复也不再转 md 文件
 - `/skill`：查看 skill 列表；`/skill show <名字>` 看正文；改完文件 `/skill reload` 生效
 - 生成文件：要表格/清单/长文档时，bot 会生成 md/txt/csv 并**作为文档发出来**（存在 `data/outbox/`）
 - 长回复转文件：正文超过 `REPLY_FILE_THRESHOLD`（默认 **500 字**）时不刷屏，改成发一个 `.md` 文件，并留一句「这次说得有点长，我整理成 md 文件了」；设为 `0` 关闭
-- 外部人设：`PERSONA_EXTRA_PATH` 指向的文件会**追加在系统提示词的最后一部分**（与酒馆的注入点一致）；改完文件在私聊发 `/persona reload` 即时生效，`/persona` 查看状态。留空则用 `data/persona_extra.txt`
+- 外部人设：`PERSONA_EXTRA_PATH` 指向的文件在**角色扮演模式下就是整段系统提示词**；改完文件在私聊发 `/persona reload` 即时生效，`/persona` 会显示实际生效的是哪套栈。留空则用 `data/persona_extra.txt`
+- 为什么必须独立成栈：内置人设要求「动作只作点缀、闲聊 80–220 字」，输出纪律又禁止内心独白与星号点评——这些和人设里「写足写透、每段一处斜体内心独白」直接冲突，混在一起会让人设完全失效。
 - 输出纪律：默认在系统提示词最末尾追加一段「只输出正文」的约束，避免外部人设导致旁白/内心戏被当成正文发出；`PERSONA_OUTPUT_GUARD=off` 可关
 
 访问规则：
@@ -133,7 +137,7 @@ python scripts\fetch_fortune_assets.py
 
 ```text
 Telegram 消息
-  → 上下文组装：角色设定 + 自动生效的 skill + 外部人设(仅 /nsfw on 的聊天) + 输出纪律
+  → 上下文组装：普通模式 = 角色设定 + 自动生效 skill + 输出纪律 ／ 角色扮演模式 = 外部人设独立成栈
   → Agent 循环（DeepSeek 原生 function calling，最多 4 步）
        ├─ web_search            联网搜索；一轮不够会自己换词再搜（上限 3 次）
        ├─ write_file            生成 md/txt/csv，回复后作为文档发出
@@ -209,7 +213,7 @@ bot/whitelist.py         群白名单
 bot/settings.py          环境变量与 config.yaml
 bot/files.py             生成 md/txt/csv 并发成 Telegram 文档
 bot/websearch.py         DeepSeek 原生联网搜索（Anthropic 兼容 Messages API）
-bot/persona.py           角色设定、外部人设加载、输出纪律
+bot/persona.py           角色设定、外部人设加载、输出纪律、角色扮演栈组装
 bot/providers/codex.py   本机 Codex CLI
 bot/providers/deepseek.py   Chat Completions / 原生工具调用
 skills/                  嵌套 skill 包（Markdown + frontmatter）

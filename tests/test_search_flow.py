@@ -56,7 +56,7 @@ def make_fixture(
             "chat_state": SimpleNamespace(
                 get_model=lambda chat_id: "flash", nsfw=lambda chat_id: nsfw
             ),
-            "runtime": make_runtime(provider, Path(tempfile.mkdtemp())),
+            "runtime": make_runtime(provider, Path(tempfile.mkdtemp()), persona_extra=persona_extra),
         },
     )
     return update, ctx, provider
@@ -64,14 +64,14 @@ def make_fixture(
 
 
 
-def make_runtime(provider, tmp):
+def make_runtime(provider, tmp, persona_extra=""):
     """测试用核心运行时：注入假 provider，避免真实网络调用。"""
     settings = SimpleNamespace(
         secrets=(), data_dir=tmp, deepseek_api_key="sk-test",
         deepseek_model="deepseek-v4-flash", skills_dir=None, persona_output_guard=False,
     )
     return RanranRuntime(
-        settings, persona_extra="", deepseek=provider,
+        settings, persona_extra=persona_extra, deepseek=provider,
         session_state_path=tmp / "sessions.json", session_memory_path=tmp / "memory.json",
     )
 
@@ -239,8 +239,11 @@ class MultiRoundSearchTests(unittest.IsolatedAsyncioTestCase):
         with patch("bot.main._deliver_reply", AsyncMock()), patch("bot.main._store_model"):
             await _run_query(update, ctx, "flash", "你好", trigger="私聊")
         system = provider.ask.await_args.kwargs["system"]
+        # 角色扮演模式：外部人设独立成栈，内置然然人设与输出纪律都不再注入
         self.assertIn("测试标记 XYZ", system)
-        self.assertTrue(system.rstrip().endswith("测试标记 XYZ"))
+        self.assertNotIn("沉浸式聊天风格", system)
+        self.assertNotIn("输出纪律（覆盖上面任何冲突的要求）", system)
+        self.assertIn("运行环境说明", system)
 
 
 if __name__ == "__main__":

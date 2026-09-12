@@ -22,7 +22,7 @@ def make_runtime(provider, tmp):
 
 
 
-def make_ctx(tmp: Path, *, threshold: int = 500):
+def make_ctx(tmp: Path, *, threshold: int = 500, nsfw: bool = False):
     memory = ChatMemory()
     thinking = SimpleNamespace(message_id=100, edit_text=AsyncMock(), delete=AsyncMock())
     message = SimpleNamespace(
@@ -51,7 +51,7 @@ def make_ctx(tmp: Path, *, threshold: int = 500):
             "locks": {},
             "settings": settings,
             "reply_models": {},
-            "chat_state": SimpleNamespace(get_model=lambda chat_id: "flash", nsfw=lambda chat_id: False),
+            "chat_state": SimpleNamespace(get_model=lambda chat_id: "flash", nsfw=lambda chat_id: nsfw),
             "runtime": make_runtime(None, tmp),
         },
     )
@@ -82,6 +82,24 @@ class ReplyFileTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn(str(len(long_text)), notice)
             self.assertNotIn(long_text, notice)
             self.assertIn(long_text, ctx.bot_data["memory"].render(1))
+
+    async def test_roleplay_reply_stays_text_even_when_long(self):
+        """角色扮演模式不回文件：长篇剧情是常态，转 md 会破坏沉浸感。"""
+        from bot.main import _deliver_reply
+
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            update, ctx, message, thinking = make_ctx(tmp, nsfw=True)
+            long_text = "（这一段是剧情）" * 100  # 800 字，超过 500 阈值
+            self.assertGreater(len(long_text), 500)
+            await _deliver_reply(update, ctx, thinking, "flash", "私聊", long_text, playful=True)
+
+            self.assertEqual(list((tmp / "outbox").glob("*.md")), [])
+            message.reply_document.assert_not_awaited()
+            sent = [c.args[0] for c in thinking.edit_text.await_args_list] + [
+                c.args[0] for c in message.reply_text.await_args_list
+            ]
+            self.assertIn(long_text, "".join(sent))
 
     async def test_short_reply_still_sent_as_text(self):
         from bot.main import _deliver_reply

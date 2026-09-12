@@ -395,7 +395,11 @@ async def nsfw_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             )
             return
         _state(context).set_nsfw(chat.id, True)
-        await message.reply_text("好，这个聊天的外部人设开着了。不想用了发 /nsfw off。")
+        await message.reply_text(
+            "好，这个聊天切到外部人设了：从下一句起，内置然然人设、skill 和输出纪律全部停用，"
+            "整段系统提示词就是那份人设文件本身（长篇回复也不再转成 md 文件）。\n"
+            "想切回去发 /nsfw off。"
+        )
         return
     if raw in {"off", "关", "关闭", "0", "false"}:
         _state(context).set_nsfw(chat.id, False)
@@ -474,10 +478,17 @@ async def persona_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     status = f"文件已读到 {len(stored)} 字" if stored else "文件不存在或为空"
     guard = "开" if _output_guard(context) else "关"
     chat = update.effective_chat
-    switch = "开" if _nsfw_on(context, chat.id if chat else None) else "关"
+    on = _nsfw_on(context, chat.id if chat else None)
+    switch = "开" if on else "关"
+    if on and stored:
+        stack = "外部人设独立成栈（内置然然人设 / skill / 输出纪律 全部停用）"
+    elif on:
+        stack = "开关是开的，但人设文件没读到内容，实际仍在普通模式"
+    else:
+        stack = f"普通模式（内置然然人设 + 输出纪律{guard}），外部人设未注入"
     await message.reply_text(
         f"外部人设文件：{status}\n路径：{path}\n当前聊天开关：{switch}（用 /nsfw on|off 改）\n"
-        f"输出纪律：{guard}\n重载：/persona reload"
+        f"实际生效：{stack}\n输出纪律（仅普通模式）：{guard}\n重载：/persona reload"
     )
 
 
@@ -953,6 +964,7 @@ async def _answer_with_tools(
         system=system,
         extra=extra,
         guard=guard,
+        nsfw=_nsfw_on(context, chat_id),
         chat_key=chat_id,
         images=images,
         automatic=automatic,
@@ -1206,7 +1218,8 @@ async def _deliver_text(
             logger.debug("Could not delete thinking message")
         return
 
-    threshold = _reply_file_threshold(context)
+    # 角色扮演模式不回文件：长篇剧情本来就是常态，转成 md 会直接破坏沉浸感。
+    threshold = 0 if _nsfw_on(context, chat.id) else _reply_file_threshold(context)
     if threshold and len(text) > threshold:
         artifact = _write_reply_file(context, text)
         if artifact is not None:
@@ -1462,7 +1475,7 @@ def main() -> None:
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     persona_extra = load_extra_persona(settings.persona_extra_path)
     logger.info(
-        "External persona: %s chars from %s (per-chat switch, default off)",
+        "External persona: %s chars from %s (independent roleplay stack, per-chat switch, default off)",
         len(persona_extra),
         settings.persona_extra_path,
     )

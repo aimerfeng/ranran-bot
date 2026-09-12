@@ -21,6 +21,8 @@ from bot.persona import (
     CODEX_SYSTEM,
     DEEPSEEK_PERSONA,
     OUTPUT_GUARD,
+    build_roleplay_prompt,
+    compose_roleplay,
     build_user_prompt,
     compose_system,
     load_extra_persona,
@@ -126,7 +128,15 @@ class RanranRuntime:
         extra_rules: str = "",
         nsfw: bool = False,
     ) -> str:
-        """角色设定 + 任务规则 + skill（目录/自动生效）→ 外部人设 → 输出纪律。"""
+        """两套完全独立的系统提示词：
+
+        - 普通模式：内置然然人设 + 任务规则 + skill → 外部人设 → 输出纪律
+        - 角色扮演模式（外部人设已加载且该会话开启）：外部人设独立成栈，
+          不再叠加内置人设、skill 目录与输出纪律——后者与成人向创作人设直接冲突
+          （例如输出纪律禁止内心独白，而人设要求每段都有）。
+        """
+        if nsfw and self.persona_extra:
+            return compose_roleplay(self.persona_extra, extra_rules=extra_rules)
         base = self.base_persona(spec)
         if extra_rules:
             base = base + "\n\n" + extra_rules
@@ -140,8 +150,7 @@ class RanranRuntime:
             active = self.skills.active_section(user_text)
             if active:
                 base += "\n\n当前自动生效的 skill：\n" + active
-        extra = self.persona_extra if nsfw else ""
-        return compose_system(compose_system(base, extra), self.output_guard())
+        return compose_system(base, self.output_guard())
 
     # ---------- 引擎 ----------
 
@@ -228,6 +237,7 @@ class RanranRuntime:
         system: str,
         extra: str = "",
         guard: str = "",
+        nsfw: bool = False,
         chat_key: int | None = None,
         images: list[Any] | None = None,
         automatic: bool = False,
@@ -239,6 +249,13 @@ class RanranRuntime:
 
         返回 (正文, 来源列表, 文件产物)。
         """
+        if nsfw and self.persona_extra:
+            # 角色扮演模式：外部人设独立成栈，调用方传进来的内置人设与输出纪律一律丢弃，
+            # 否则输出纪律会重新落到末尾，把成人向人设的写作要求再盖掉一次。
+            system = self.compose_prompt(spec, user_text=user_prompt, nsfw=True)
+            extra = ""
+            guard = ""
+
         provider = self.provider_for(spec)
         supports_tools = provider is not None and hasattr(provider, "chat")
 
@@ -352,22 +369,27 @@ class RanranRuntime:
         """完整回合：组装提示词 → 跑 agent（含工具）→ 返回正文/来源/文件。"""
         session = self.session(session_id)
         spec = MODELS.get(model_key or session.model_key) or MODELS[DEFAULT_MODEL_KEY]
-        user_prompt = build_user_prompt(
-            speaker=speaker,
-            text=text,
-            history=self.history(session_id),
-            trigger=trigger,
-            reply_context="",
-            chat_type="private",
-        )
+        if session.nsfw and self.persona_extra:
+            user_prompt = build_roleplay_prompt(
+                speaker=speaker, text=text, history=self.history(session_id), trigger=trigger
+            )
+        else:
+            user_prompt = build_user_prompt(
+                speaker=speaker,
+                text=text,
+                history=self.history(session_id),
+                trigger=trigger,
+                reply_context="",
+                chat_type="private",
+            )
         system = self.compose_prompt(spec, user_text=text, nsfw=session.nsfw)
-        extra = self.persona_extra if session.nsfw else ""
         raw, hits, artifacts = await self.answer(
             spec,
             user_prompt,
             system=system,
-            extra=extra,
+            extra="",
             guard=self.output_guard(),
+            nsfw=session.nsfw,
             chat_key=session.memory_key,
             images=images,
             on_tool=on_tool,
