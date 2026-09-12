@@ -23,6 +23,10 @@
 - 两个模式是**两套完全独立的系统提示词**，不会互相污染：
   - 普通模式：内置然然人设 + skill + 输出纪律（助手式对话）
   - 角色扮演模式：**整段系统提示词就是那份人设文件本身**——内置人设、skill、输出纪律全部停用；用户侧提示词换成前情提要式，长回复也不再转 md 文件
+- **篇幅规划**（角色扮演模式）：人设通常写着「写足写透、宁多勿少」，模型会不分场合地长篇输出——对方一句「嗯」也回两千字。所以每轮先做一次篇幅判定，结论放在系统提示词末尾：
+  - 显然的短句（`嗯`/`好的`/`在吗`/`？`）与「继续/展开/细写」这类明确要求，本地启发式直接判定，**不额外调用模型**；
+  - 其余情况花一次极短的模型调用判定 `short`（1~4 句）/ `normal`（8~20 句）/ `long`（30~60 句），失败则按 `normal` 兜底；
+  - 实测：短问候 726 字 → 64 字，场景推进仍是 2541 字。`PERSONA_LENGTH_PLANNER=off` 可关闭。
 - `/skill`：查看 skill 列表；`/skill show <名字>` 看正文；改完文件 `/skill reload` 生效
 - 生成文件：要表格/清单/长文档时，bot 会生成 md/txt/csv 并**作为文档发出来**（存在 `data/outbox/`）
 - 长回复转文件：正文超过 `REPLY_FILE_THRESHOLD`（默认 **500 字**）时不刷屏，改成发一个 `.md` 文件，并留一句「这次说得有点长，我整理成 md 文件了」；设为 `0` 关闭
@@ -237,7 +241,7 @@ python -m unittest discover -s tests -v   # 193 个用例，全部本地 mock，
 - CI：每次 push / PR 由 GitHub Actions 跑 ruff + 全量测试（见 `.github/workflows/tests.yml`）。
 - 素材缺失时（干净检出）依赖签图与字体的 8 个用例会自动跳过，其余照常执行，所以新克隆的仓库测试也是绿的。
 - 想连素材一起验证：先 `python scripts\fetch_fortune_assets.py` 再跑测试。
-- 调试开关：`PERSONA_OUTPUT_GUARD=off` 关输出纪律；`REPLY_FILE_THRESHOLD=0` 关长回复转文件；`YUN_FONT_PATH` / `BOT_CJK_FONT` 指定中文字体。
+- 调试开关：`PERSONA_OUTPUT_GUARD=off` 关输出纪律；`PERSONA_LENGTH_PLANNER=off` 关篇幅规划；`REPLY_FILE_THRESHOLD=0` 关长回复转文件；`YUN_FONT_PATH` / `BOT_CJK_FONT` 指定中文字体。
 
 ## 第三方素材
 

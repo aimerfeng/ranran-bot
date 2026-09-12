@@ -1,4 +1,6 @@
 # Shared immersive chat persona. Task-specific rules are added by the caller.
+import re
+
 IMMERSIVE_STYLE = """沉浸式聊天风格：
 你以虚构二次元角色「然然」与大家聊天，设定为 24 岁的温柔女生。维持这个角色的语气和记忆连续性。
 像一个有自己反应的群友：会接梗、会犹豫、会小声开心，也会认真听人讲完，不是只会点头附和的安慰模板。
@@ -123,13 +125,80 @@ def build_roleplay_prompt(
     return "\n\n".join(parts)
 
 
-def compose_roleplay(persona: str, runtime_rules: str = ROLEPLAY_RUNTIME, extra_rules: str = "") -> str:
-    """外部人设独立成栈：它是唯一的角色设定，不再叠加内置人设与输出纪律。"""
+# 篇幅档位：人设写着"写足写透、宁多勿少"，模型会不分场合地长篇输出——
+# 对方一句"嗯"也回两千字。这一轮先判断该长写还是短接，结论放在系统提示词最后。
+LENGTH_BUDGETS = {
+    "short": (
+        "【本轮篇幅 · 短接】只写 1~4 句、不超过 120 字。对方只是应答、语气词、简单确认或日常寒暄，"
+        "照常回应即可：不要铺场面、不要展开细节、不要补充额外剧情。"
+        "人设里「写足写透」的要求只针对关键场景，本轮不是。"
+    ),
+    "normal": (
+        "【本轮篇幅 · 常规】写 8~20 句、约 300~800 字。有来有回的日常交流，推进一点内容就够，"
+        "不必写成完整的一场戏。"
+    ),
+    "long": (
+        "【本轮篇幅 · 写足】按人设的写作标准全力展开：30~60 句、1500~3000 字。"
+        "只在这几种情况下用这个档位——关键剧情推进、情感转折、亲密场景的展开，或对方明确要求细写。"
+    ),
+}
+
+LENGTH_PLANNER_SYSTEM = """你在判断"这一轮回复该写多长"，只输出一个词。
+
+short：对方只是应答、语气词、简单确认或日常寒暄（嗯、好、哦、在吗、哈哈、？），或者你上一轮已经长篇展开过、这轮该收着说。
+normal：普通往来、日常交流、话题自然地往前推一点。
+long：关键剧情推进、情感转折、亲密场景需要展开，或对方明确要求继续／细写／别停。
+
+只输出 short、normal 或 long 三者之一，不要标点、不要解释。"""
+
+_SHORT_TEXT = re.compile(r"^[\s（()\[\]【】。，、！？?!~～…]*"
+                         r"(嗯+|哦+|啊+|呃+|哈+|嘿+|好|好的|行|是|对|没有|没事|谢谢|晚安|早安|早|在吗|"
+                         r"？|\?|…+|\.+)[\s（()\[\]【】。，、！？?!~～…]*$")
+_LONG_HINTS = ("继续", "接着写", "展开", "细写", "详细", "写长", "别停", "描写", "来一段", "多写")
+
+
+def classify_length_hint(text: str) -> str | None:
+    """显然短/显然长的直接下结论，省掉一次模型调用；判断不了返回 None。"""
+    body = (text or "").strip()
+    if not body:
+        return "short"
+    if len(body) <= 8 and _SHORT_TEXT.match(body):
+        return "short"
+    if any(hint in body for hint in _LONG_HINTS):
+        return "long"
+    return None
+
+
+def parse_length_label(raw: str) -> str:
+    """从规划器输出里取出档位，取不到就按常规处理。"""
+    text = (raw or "").strip().lower()
+    for label in ("short", "normal", "long"):
+        if re.search(rf"\b{label}\b", text):
+            return label
+    if "短" in text:
+        return "short"
+    if "长" in text:
+        return "long"
+    return "normal"
+
+
+def compose_roleplay(
+    persona: str,
+    runtime_rules: str = ROLEPLAY_RUNTIME,
+    extra_rules: str = "",
+    budget: str = "",
+) -> str:
+    """外部人设独立成栈：它是唯一的角色设定，不再叠加内置人设与输出纪律。
+
+    budget 是这一轮的篇幅档位说明，放在最末尾（近因位置最管用）。
+    """
     parts = [persona]
     if runtime_rules:
         parts.append(runtime_rules)
     if extra_rules:
         parts.append("本次任务的额外要求：\n" + extra_rules)
+    if budget:
+        parts.append(budget)
     return "\n\n".join(parts)
 
 

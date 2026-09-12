@@ -484,9 +484,12 @@ async def persona_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         stack = "开关是开的，但人设文件没读到内容，实际仍在普通模式"
     else:
         stack = f"普通模式（内置然然人设 + 输出纪律{guard}），外部人设未注入"
+    planner = getattr(_settings(context), "persona_length_planner", True)
+    planner_text = "开（短句直接短接，其余先让模型判一轮）" if planner else "关（一律按人设写足）"
     await message.reply_text(
         f"外部人设文件：{status}\n路径：{path}\n当前聊天开关：{switch}（用 /nsfw on|off 改）\n"
-        f"实际生效：{stack}\n输出纪律（仅普通模式）：{guard}\n重载：/persona reload"
+        f"实际生效：{stack}\n篇幅规划（仅角色扮演）：{planner_text}\n"
+        f"输出纪律（仅普通模式）：{guard}\n重载：/persona reload"
     )
 
 

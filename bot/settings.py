@@ -34,6 +34,7 @@ class Settings:
     persona_extra_path: Path | None = None
     # 是否在系统提示词最后追加"只输出正文"的输出纪律（默认开）。
     persona_output_guard: bool = True
+    persona_length_planner: bool = True
     # skill 目录；可用 SKILLS_DIR_PATH 覆盖。
     skills_dir: Path | None = None
     # 回复超过这个字数就写成 md 文件发；0 表示关闭（永远发文本）。
@@ -100,6 +101,14 @@ def _persona_output_guard() -> bool:
     return raw not in {"0", "off", "false", "no", "关", "关闭"}
 
 
+def _persona_length_planner() -> bool:
+    """角色扮演模式下是否先跑一轮篇幅规划（判断该长写还是短接）。"""
+    raw = (os.getenv("PERSONA_LENGTH_PLANNER") or "").strip().lower()
+    if not raw:
+        return True
+    return raw not in {"0", "off", "false", "no", "关", "关闭"}
+
+
 def _persona_extra_path() -> Path:
     raw = (os.getenv("PERSONA_EXTRA_PATH") or "").strip()
     if not raw:
@@ -145,6 +154,7 @@ def load_settings() -> Settings:
         initial_group_ids=_load_initial_group_ids(),
         persona_extra_path=_persona_extra_path(),
         persona_output_guard=_persona_output_guard(),
+        persona_length_planner=_persona_length_planner(),
         skills_dir=_skills_dir(),
         reply_file_threshold=_reply_file_threshold(),
     )

@@ -21,12 +21,16 @@ from bot.models import DEFAULT_MODEL_KEY, MODELS, resolve_model_key
 from bot.persona import (
     CODEX_SYSTEM,
     DEEPSEEK_PERSONA,
+    LENGTH_BUDGETS,
+    LENGTH_PLANNER_SYSTEM,
     OUTPUT_GUARD,
     build_roleplay_prompt,
     build_user_prompt,
+    classify_length_hint,
     compose_roleplay,
     compose_system,
     load_extra_persona,
+    parse_length_label,
     strip_roleplay_prefix,
 )
 from bot.providers.deepseek import DeepSeekProvider, user_content
@@ -84,6 +88,7 @@ class RanranRuntime:
         *,
         skills: SkillRegistry | None = None,
         persona_extra: str = "",
+        length_planner: bool | None = None,
         deepseek: Any = None,
         codex: Any = None,
         journal: Any = None,
@@ -99,6 +104,12 @@ class RanranRuntime:
         )
         self.codex = codex
         self.journal = journal
+        self.length_planner = (
+            bool(getattr(settings, "persona_length_planner", True))
+            if length_planner is None
+            else bool(length_planner)
+        )
+        self._last_reply_chars: dict[str, int] = {}
         self.guard_enabled = (
             bool(getattr(settings, "persona_output_guard", True))
             if guard_enabled is None
@@ -127,6 +138,7 @@ class RanranRuntime:
         user_text: str = "",
         extra_rules: str = "",
         nsfw: bool = False,
+        budget: str = "",
     ) -> str:
         """两套完全独立的系统提示词：
 
@@ -136,7 +148,7 @@ class RanranRuntime:
           （例如输出纪律禁止内心独白，而人设要求每段都有）。
         """
         if nsfw and self.persona_extra:
-            return compose_roleplay(self.persona_extra, extra_rules=extra_rules)
+            return compose_roleplay(self.persona_extra, extra_rules=extra_rules, budget=budget)
         base = self.base_persona(spec)
         if extra_rules:
             base = base + "\n\n" + extra_rules
@@ -151,6 +163,37 @@ class RanranRuntime:
             if active:
                 base += "\n\n当前自动生效的 skill：\n" + active
         return compose_system(base, self.output_guard())
+
+    async def plan_length(
+        self,
+        spec: Any,
+        *,
+        text: str,
+        history: str = "",
+        last_reply_chars: int = 0,
+    ) -> tuple[str, str]:
+        """内部一轮：判断这次该长写还是短接，返回 (档位, 判定来源)。
+
+        人设写着"写足写透、宁多勿少"，模型会不分场合地长篇输出——对方一句"嗯"也回两千字。
+        显然的短句/长句走本地启发式（不花钱），判断不了的才花一次极短的模型调用。
+        """
+        quick = classify_length_hint(text)
+        if quick:
+            return quick, "heuristic"
+        provider = self.provider_for(spec)
+        if provider is None:
+            return "normal", "fallback"
+        prompt = (
+            f"最近前情（从旧到新）：\n{history[-800:] or '（暂无）'}\n\n"
+            f"对方刚说：{text}\n\n"
+            f"你上一轮回复长度：{last_reply_chars} 字"
+        )
+        try:
+            raw = await self._ask_provider(spec, prompt, system=LENGTH_PLANNER_SYSTEM)
+        except Exception:  # noqa: BLE001 - 规划失败不该拖垮整轮对话
+            logger.warning("Length planner failed; falling back to normal budget")
+            return "normal", "fallback"
+        return parse_length_label(raw), "model"
 
     # ---------- 引擎 ----------
 
@@ -238,6 +281,7 @@ class RanranRuntime:
         extra: str = "",
         guard: str = "",
         nsfw: bool = False,
+        budget: str = "",
         chat_key: int | None = None,
         images: list[Any] | None = None,
         automatic: bool = False,
@@ -252,7 +296,7 @@ class RanranRuntime:
         if nsfw and self.persona_extra:
             # 角色扮演模式：外部人设独立成栈，调用方传进来的内置人设与输出纪律一律丢弃，
             # 否则输出纪律会重新落到末尾，把成人向人设的写作要求再盖掉一次。
-            system = self.compose_prompt(spec, user_text=user_prompt, nsfw=True)
+            system = self.compose_prompt(spec, user_text=user_prompt, nsfw=True, budget=budget)
             extra = ""
             guard = ""
 
@@ -382,7 +426,23 @@ class RanranRuntime:
                 reply_context="",
                 chat_type="private",
             )
-        system = self.compose_prompt(spec, user_text=text, nsfw=session.nsfw)
+        budget = ""
+        if session.nsfw and self.persona_extra and self.length_planner:
+            length_mode, source = await self.plan_length(
+                spec,
+                text=text,
+                history=self.history(session_id),
+                last_reply_chars=self._last_reply_chars.get(session_key(session_id), 0),
+            )
+            budget = LENGTH_BUDGETS.get(length_mode, "")
+            logger.info(
+                "Length plan=%s source=%s last=%s chars session=%s",
+                length_mode,
+                source,
+                self._last_reply_chars.get(session_key(session_id), 0),
+                session_id,
+            )
+        system = self.compose_prompt(spec, user_text=text, nsfw=session.nsfw, budget=budget)
         raw, hits, artifacts = await self.answer(
             spec,
             user_prompt,
@@ -390,6 +450,7 @@ class RanranRuntime:
             extra="",
             guard=self.output_guard(),
             nsfw=session.nsfw,
+            budget=budget,
             chat_key=session.memory_key,
             images=images,
             on_tool=on_tool,
@@ -401,6 +462,7 @@ class RanranRuntime:
         self.remember(session_id, speaker, text)
         if text_out:
             self.remember(session_id, "然然", text_out)
+        self._last_reply_chars[session_key(session_id)] = len(text_out)
         return Reply(
             text=text_out,
             sources=dedupe_hits(hits),
