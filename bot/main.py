@@ -28,7 +28,7 @@ from bot.sticker_commands import sticker_cmd, quote_cmd, choose_cmd
 from bot.chat_state import AutoReplyGate, ChatMemory, ChatStateStore
 from bot.daily_journal import BEIJING, DailyJournal, DailySnapshot
 from bot.daily_analysis import DailyAnalyzer
-from bot.files import send_artifact
+from bot.files import FileError, create_artifact, long_reply_filename, send_artifact
 from bot.harness.agent import Agent
 from bot.harness.kit import build_tools
 from bot.harness.skills import SkillRegistry, load_skills
@@ -582,14 +582,7 @@ async def _run_search_query(
                 "先给你原始搜索结果："
             )
 
-        chunks = split_text(answer)
-        first = await _edit_or_reply(thinking, message, chunks[0])
-        if first is not None:
-            _store_model(context, chat.id, first.message_id, spec.key)
-            _memory(context).add(chat.id, "然然", chunks[0], message_id=first.message_id)
-        for chunk in chunks[1:]:
-            sent = await message.reply_text(chunk)
-            _memory(context).add(chat.id, "然然", chunk, message_id=sent.message_id)
+        await _deliver_text(update, context, thinking, spec.key, answer)
         sources = dedupe_hits(hits)
         if sources:
             for chunk in split_text(format_search_sources(sources)):
@@ -1298,6 +1291,102 @@ async def _run_query(
             await send_artifact(message, artifact)
 
 
+def _reply_file_threshold(context: ContextTypes.DEFAULT_TYPE) -> int:
+    """超长回复转文件的字数阈值；配置缺失时按 0（关闭）处理。"""
+    try:
+        settings = _settings(context)
+    except (KeyError, AttributeError):
+        return 0
+    if settings is None:
+        return 0
+    try:
+        return int(getattr(settings, "reply_file_threshold", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _write_reply_file(context: ContextTypes.DEFAULT_TYPE, text: str):
+    """把超长回复落成 md 文件；落盘失败返回 None（调用方退回发文本）。"""
+    settings = _settings(context)
+    try:
+        return create_artifact(
+            settings.data_dir / "outbox",
+            filename=long_reply_filename(),
+            content=text,
+            fmt="md",
+        )
+    except FileError as exc:
+        logger.warning("Long reply could not be written as a file: %s", exc)
+        return None
+
+
+async def _deliver_reply_file(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    thinking: Any,
+    model_key: str,
+    text: str,
+    artifact: Any,
+) -> None:
+    """长回复的投递：先在原地留一句说明，再把正文作为 md 文档发出去。"""
+    message = update.effective_message
+    chat = update.effective_chat
+    if message is None or chat is None:
+        return
+    notice = f"这次说得有点长（{len(text)} 字），我整理成 md 文件了。"
+    first = await _edit_or_reply(thinking, message, notice)
+    if first is not None:
+        _store_model(context, chat.id, first.message_id, model_key)
+        _memory(context).add(chat.id, "然然", notice, message_id=first.message_id)
+    sent = await send_artifact(message, artifact, caption=f"{len(text)} 字 · {artifact.filename}")
+    if sent is not None:
+        _store_model(context, chat.id, sent.message_id, model_key)
+    # 正文照样进记忆，之后追问"刚才那份文件"才有上下文。
+    _memory(context).add(chat.id, "然然", text)
+
+
+async def _deliver_text(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    thinking: Any,
+    model_key: str,
+    text: str,
+) -> None:
+    """统一的正文投递：短的照常分条发，超过阈值的写成 md 文件发。"""
+    message = update.effective_message
+    chat = update.effective_chat
+    if message is None or chat is None:
+        return
+    if not text:
+        try:
+            if thinking is not None:
+                await thinking.delete()
+        except TelegramError:
+            logger.debug("Could not delete thinking message")
+        return
+
+    threshold = _reply_file_threshold(context)
+    if threshold and len(text) > threshold:
+        artifact = _write_reply_file(context, text)
+        if artifact is not None:
+            logger.info(
+                "Long reply delivered as file chars=%s threshold=%s chat=%s",
+                len(text), threshold, chat.id,
+            )
+            await _deliver_reply_file(update, context, thinking, model_key, text, artifact)
+            return
+
+    chunks = split_text(text)
+    first = await _edit_or_reply(thinking, message, chunks[0])
+    if first is not None:
+        _store_model(context, chat.id, first.message_id, model_key)
+        _memory(context).add(chat.id, "然然", chunks[0], message_id=first.message_id)
+    for chunk in chunks[1:]:
+        sent = await message.reply_text(chunk)
+        _store_model(context, chat.id, sent.message_id, model_key)
+        _memory(context).add(chat.id, "然然", chunk, message_id=sent.message_id)
+
+
 async def _deliver_reply(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -1318,22 +1407,7 @@ async def _deliver_reply(
     if not text and trigger != "主动接话":
         text = "我在呢，接着说吧。"
 
-    if text:
-        chunks = split_text(text)
-        first = await _edit_or_reply(thinking, message, chunks[0])
-        if first is not None:
-            _store_model(context, chat.id, first.message_id, model_key)
-            _memory(context).add(chat.id, "然然", chunks[0], message_id=first.message_id)
-        for chunk in chunks[1:]:
-            sent = await message.reply_text(chunk)
-            _store_model(context, chat.id, sent.message_id, model_key)
-            _memory(context).add(chat.id, "然然", chunk, message_id=sent.message_id)
-    else:
-        try:
-            if thinking is not None:
-                await thinking.delete()
-        except TelegramError:
-            logger.debug("Could not delete thinking message")
+    await _deliver_text(update, context, thinking, model_key, text)
 
 
 

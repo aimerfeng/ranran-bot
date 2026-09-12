@@ -36,6 +36,8 @@ class Settings:
     persona_output_guard: bool = True
     # skill 目录；可用 SKILLS_DIR_PATH 覆盖。
     skills_dir: Path | None = None
+    # 回复超过这个字数就写成 md 文件发；0 表示关闭（永远发文本）。
+    reply_file_threshold: int = 500
 
     @property
     def secrets(self) -> tuple[str, ...]:
@@ -68,6 +70,17 @@ def _load_initial_group_ids() -> tuple[int, ...]:
         if value < 0:
             ids.append(value)
     return tuple(ids)
+
+
+def _reply_file_threshold() -> int:
+    raw = (os.getenv("REPLY_FILE_THRESHOLD") or "").strip()
+    if not raw:
+        return 500
+    try:
+        value = int(raw)
+    except ValueError:
+        return 500
+    return max(0, value)
 
 
 def _skills_dir() -> Path:
@@ -133,4 +146,5 @@ def load_settings() -> Settings:
         persona_extra_path=_persona_extra_path(),
         persona_output_guard=_persona_output_guard(),
         skills_dir=_skills_dir(),
+        reply_file_threshold=_reply_file_threshold(),
     )

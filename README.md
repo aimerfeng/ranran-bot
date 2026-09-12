@@ -20,6 +20,7 @@
 - `/nsfw on|off`：按聊天开关「外部人设」注入（**默认关、仅 owner**）。人设正文由使用者在仓库外自行提供，仓库内不含此类内容
 - `/skill`：查看 skill 列表；`/skill show <名字>` 看正文；改完文件 `/skill reload` 生效
 - 生成文件：要表格/清单/长文档时，bot 会生成 md/txt/csv 并**作为文档发出来**（存在 `data/outbox/`）
+- 长回复转文件：正文超过 `REPLY_FILE_THRESHOLD`（默认 **500 字**）时不刷屏，改成发一个 `.md` 文件，并留一句「这次说得有点长，我整理成 md 文件了」；设为 `0` 关闭
 - 外部人设：`PERSONA_EXTRA_PATH` 指向的文件会**追加在系统提示词的最后一部分**（与酒馆的注入点一致）；改完文件在私聊发 `/persona reload` 即时生效，`/persona` 查看状态。留空则用 `data/persona_extra.txt`
 - 输出纪律：默认在系统提示词最末尾追加一段「只输出正文」的约束，避免外部人设导致旁白/内心戏被当成正文发出；`PERSONA_OUTPUT_GUARD=off` 可关
 

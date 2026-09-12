@@ -6,6 +6,7 @@ import io
 import logging
 import re
 import time
+from datetime import datetime
 from pathlib import Path
 
 from telegram import InputFile
@@ -54,6 +55,12 @@ def normalize_csv(content: str) -> str:
     return out.getvalue()
 
 
+def long_reply_filename(*, stem: str = "然然的回复", when: datetime | None = None) -> str:
+    """长回复落成文件时用的名字，带时间戳避免重名。"""
+    stamp = (when or datetime.now()).strftime("%Y%m%d-%H%M%S")
+    return f"{stem}-{stamp}.md"
+
+
 def create_artifact(directory: Path, *, filename: str, content: str, fmt: str = "") -> Artifact:
     """落盘一个产物文件；校验格式、大小与内容。"""
     text = content or ""
@@ -76,18 +83,20 @@ def create_artifact(directory: Path, *, filename: str, content: str, fmt: str = 
     return Artifact(path=path, filename=name, size=path.stat().st_size)
 
 
-async def send_artifact(message, artifact: Artifact, *, caption: str = "") -> bool:
-    """把产物当作文档发给用户；失败只记日志，不影响已经发出的文字回复。"""
+async def send_artifact(message, artifact: Artifact, *, caption: str = ""):
+    """把产物当作文档发给用户；失败只记日志，不影响已经发出的文字回复。
+
+    成功时返回发出去的那条 Message（调用方可据此记住模型），失败返回 None。
+    """
     try:
         with artifact.path.open("rb") as handle:
-            await message.reply_document(
+            return await message.reply_document(
                 document=InputFile(handle, filename=artifact.filename),
                 caption=caption or None,
             )
-        return True
     except TelegramError as exc:
         logger.warning("Failed to send artifact %s: %s", artifact.filename, exc)
-        return False
+        return None
     except OSError as exc:
         logger.warning("Artifact unreadable %s: %s", artifact.path, exc)
-        return False
+        return None
