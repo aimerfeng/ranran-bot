@@ -24,3 +24,4 @@ bot/assets/fortune/font/
 
 # 本机专用自动化脚本（依赖本地 Chrome/Telegram Web 登录态）
 scripts/add_bots_web_tg.py
+.commit-msg.tmp
