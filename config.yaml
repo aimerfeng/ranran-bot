@@ -1,0 +1,4 @@
+# 初始群白名单。只接受群 / 超级群 chat_id（负数，例如 -100xxxxxxxxxx）。
+# 运行后 owner 用私聊命令增删，会持久化到 data/whitelist.json（优先于本文件）。
+whitelist:
+  group_ids: []

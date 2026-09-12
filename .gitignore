@@ -1,0 +1,26 @@
+# 密钥与运行时数据
+.env
+data/
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 运行日志：里面会带 bot token 与真实 chat_id，绝不入库
+*.log
+*.log.old
+
+# 开发过程产物（截图、验证脚本输出、临时基线等）
+artifacts/
+
+# 第三方素材：权利属于各自权利人，不入库。
+# 用 scripts/fetch_fortune_assets.py 按 manifest.json 的上游 commit 精确拉取。
+bot/assets/fortune/img/
+bot/assets/fortune/font/
+
+# 本机专用自动化脚本（依赖本地 Chrome/Telegram Web 登录态）
+scripts/add_bots_web_tg.py
