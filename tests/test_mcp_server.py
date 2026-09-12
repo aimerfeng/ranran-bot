@@ -4,8 +4,15 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from adapters.mcp.server import TOOL_NAMES, build_server
 from bot.core.runtime import RanranRuntime
+
+# MCP 依赖是可选的（只需要 Telegram bot 的人不必安装），没装就跳过这些用例。
+try:
+    from adapters.mcp.server import TOOL_NAMES, build_server
+except ImportError:  # pragma: no cover - 取决于环境
+    TOOL_NAMES, build_server = (), None
+
+MCP_HINT = "未安装 mcp 依赖：pip install -r requirements-mcp.txt"
 
 
 def make_settings(tmp):
@@ -28,6 +35,7 @@ def tool_text(result) -> str:
     )
 
 
+@unittest.skipUnless(build_server is not None, MCP_HINT)
 class McpServerTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())

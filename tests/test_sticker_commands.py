@@ -8,6 +8,10 @@ from telegram import Chat, InputFile, Message, MessageEntity, Update, User
 from telegram.error import BadRequest
 from test_sticker_maker import image_bytes
 
+from bot.sticker_maker import cjk_font_available
+
+FONT_HINT = "本机没有中文字体：设置 BOT_CJK_FONT 或安装 fonts-noto-cjk 后再跑"
+
 
 class CommandTests(unittest.IsolatedAsyncioTestCase):
     def module(self):
@@ -41,6 +45,7 @@ class CommandTests(unittest.IsolatedAsyncioTestCase):
             u.effective_message.reply_sticker.assert_not_awaited()
             u.effective_message.reply_photo.assert_not_awaited()
 
+    @unittest.skipUnless(cjk_font_available(), FONT_HINT)
     async def test_photo_caption_cache_and_different_caption(self):
         m=self.module(); src=self.source(photo=[NS(file_id='small',file_unique_id='s',file_size=100),NS(file_id='large',file_unique_id='l',file_size=100)])
         u,c=self.fixture('/sticker@mybot 我真的谢',src)

@@ -29,6 +29,15 @@ def load_font(size: int):
     raise ValueError('缺少中文字体，请配置 BOT_CJK_FONT 为中文字体文件路径。')
 
 
+def cjk_font_available() -> bool:
+    """本机是否有可用中文字体（渲染贴纸/金句卡需要，测试据此决定是否跳过）。"""
+    try:
+        load_font(32)
+    except (ValueError, OSError):
+        return False
+    return True
+
+
 def wrap_text(text: str, font, width: int) -> list[str]:
     """Character wrapping preserves spaces, hard breaks, and the original words."""
     result = []

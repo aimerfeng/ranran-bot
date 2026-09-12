@@ -13,6 +13,7 @@ from bot.fortune import BANDS, HIDDEN_SIGNS, assets_ready, build_fortune, render
 from bot.fortune_poetry import draw_verse, poetry_catalog, verse_columns
 
 ASSETS_HINT = "素材未下载：先运行 python scripts/fetch_fortune_assets.py"
+BASELINE_HINT = "缺少升级基线 artifacts/poetic-fortune/baseline/fortune.py（开发产物，未入库）"
 
 
 class PoetryTests(unittest.TestCase):
@@ -52,6 +53,7 @@ class PoetryTests(unittest.TestCase):
         f=build_fortune(42,'星野',date(2026,9,5));prompt=build_reading_prompt(f)
         self.assertIn('原创拟古',prompt);self.assertIn(f.display_advice,prompt)
         self.assertIn('诗人',FORTUNE_READING_SYSTEM)
+    @unittest.skipUnless(Path('artifacts/poetic-fortune/baseline/fortune.py').is_file(), BASELINE_HINT)
     def test_upgrade_preserves_old_score_and_hidden_roll(self):
         path=Path('artifacts/poetic-fortune/baseline/fortune.py')
         spec=importlib.util.spec_from_file_location('old_fortune_poem_test',path);m=importlib.util.module_from_spec(spec);sys.modules[spec.name]=m;spec.loader.exec_module(m)

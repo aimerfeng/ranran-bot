@@ -7,7 +7,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  test:
+  # 完整环境：装齐中文字体与 MCP 依赖，让所有用例真的执行
+  full:
+    name: 全量（含字体与 mcp 依赖）
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,10 +19,15 @@ jobs:
           python-version: "3.12"
           cache: pip
 
+      # 贴纸/金句卡渲染需要中文字体，MCP 测试需要 mcp 依赖，否则相关用例会自动跳过
+      - name: 安装中文字体
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq fonts-noto-cjk
+
       - name: 安装依赖
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install -r requirements-mcp.txt
           pip install -r requirements-dev.txt
 
       - name: Lint（ruff）
@@ -29,10 +36,30 @@ jobs:
       - name: 单元测试
         run: python -m unittest discover -s tests -v
 
-      # 素材（595 张签图与字体）因版权原因不进仓库，未下载时相关用例自动跳过。
-      # 想连素材一起验证就先跑：python scripts/fetch_fortune_assets.py
       - name: 覆盖率（仅供参考，不设门槛）
         run: |
           coverage run -m unittest discover -s tests
           coverage report -m
         continue-on-error: true
+
+  # 最小环境：只装运行依赖，等价于"刚 clone 下来"的样子
+  minimal:
+    name: 干净检出（只装运行依赖）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: 只装运行依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # 素材（595 张签图与字体）因版权原因不入库，这一步正是验证缺它们的降级行为：
+      # 相关用例应跳过而不是失败，其余照常执行。
+      - name: 单元测试（素材/字体/mcp 缺失时应跳过）
+        run: python -m unittest discover -s tests

@@ -3,6 +3,10 @@ import unittest
 
 from PIL import Image
 
+from bot.sticker_maker import cjk_font_available
+
+FONT_HINT = "本机没有中文字体：设置 BOT_CJK_FONT 或安装 fonts-noto-cjk 后再跑"
+
 
 def image_bytes(size=(900, 400), mode='RGBA', color=(70, 110, 180, 160), fmt='PNG'):
     out = io.BytesIO()
@@ -10,6 +14,7 @@ def image_bytes(size=(900, 400), mode='RGBA', color=(70, 110, 180, 160), fmt='PN
     return out.getvalue()
 
 
+@unittest.skipUnless(cjk_font_available(), FONT_HINT)
 class MakerTests(unittest.TestCase):
     def maker(self):
         import importlib.util
